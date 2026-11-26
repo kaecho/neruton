@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+
+FROM rust:1-bookworm AS builder
+
+WORKDIR /build
+
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+
+RUN cargo build --release --locked --bin neruton-server \
+    && strip /build/target/release/neruton-server
+
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin neruton
+
+COPY --from=builder /build/target/release/neruton-server /usr/local/bin/neruton-server
+
+USER neruton
+
+ENV NERUTON_BIND=0.0.0.0:8080 \
+    NERUTON_BASE_DOMAIN=moer.eu.org \
+    NERUTON_PANEL_HOST=neruton.moer.eu.org \
+    NERUTON_PUBLIC_SCHEME=https \
+    RUST_LOG=neruton_server=info
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/_neruton/health >/dev/null || exit 1
+
+ENTRYPOINT ["/usr/local/bin/neruton-server"]

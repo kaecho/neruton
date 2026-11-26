@@ -1,0 +1,39 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+export type Theme = "dark" | "light";
+
+const THEME_STORAGE_KEY = "neruton_theme";
+
+export function useTheme() {
+  const [theme, setThemeState] = useState<Theme>("dark");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const isDark = document.documentElement.classList.contains("dark");
+    setThemeState(isDark ? "dark" : "light");
+    setMounted(true);
+  }, []);
+
+  const setTheme = useCallback((next: Theme) => {
+    setThemeState(next);
+    const root = document.documentElement;
+    if (next === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(theme === "dark" ? "light" : "dark");
+  }, [theme, setTheme]);
+
+  return { theme, setTheme, toggleTheme, mounted };
+}

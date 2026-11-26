@@ -1,0 +1,43 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+*.pdb
+
+# Node / Next.js (web/)
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+web/.swc/
+web/*.tsbuildinfo
+web/next-env.d.ts
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/pnpm-debug.log*
+
+# Environment & secrets
+.env
+.env.*
+web/.env
+web/.env.*
+!.env.example
+!web/.env.example
+
+# Build & release artifacts
+/dist/
+/artifacts/
+SHA256SUMS.txt
+
+# OS, editors & temporary files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,74 @@
+# Production Docker Compose stack for Neruton (Zero exposed host ports)
+# Traffic enters exclusively via the outbound `cloudflared` Cloudflare Tunnel
+# and is routed internally over `neruton-net` to `neruton-server:8080`.
+#
+# Usage:
+#   cp .env.example .env   # fill in CLOUDFLARED_TUNNEL_TOKEN
+#   docker compose up -d --build
+#
+# For local testing without Cloudflare (exposes 127.0.0.1:8080):
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+services:
+  neruton-web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      NERUTON_SERVER_URL: http://neruton-server:8080
+      NEXT_PUBLIC_BASE_DOMAIN: ${NERUTON_BASE_DOMAIN:-moer.eu.org}
+      NEXT_PUBLIC_PANEL_HOST: ${NERUTON_PANEL_HOST:-neruton.moer.eu.org}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - neruton-net
+
+  neruton-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    restart: unless-stopped
+    environment:
+      NERUTON_BIND: 0.0.0.0:8080
+      NERUTON_BASE_DOMAIN: ${NERUTON_BASE_DOMAIN:-moer.eu.org}
+      NERUTON_PANEL_HOST: ${NERUTON_PANEL_HOST:-neruton.moer.eu.org}
+      NERUTON_WEB_UPSTREAM: http://neruton-web:3000
+      NERUTON_PUBLIC_SCHEME: ${NERUTON_PUBLIC_SCHEME:-https}
+      NERUTON_AUTH_TOKEN: ${NERUTON_AUTH_TOKEN:-}
+    depends_on:
+      - neruton-web
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:8080/_neruton/health >/dev/null || wget -qO- http://127.0.0.1:8080/_neruton/health >/dev/null",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - neruton-net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN:-}
+    depends_on:
+      - neruton-server
+    networks:
+      - neruton-net
+
+networks:
+  neruton-net:
+    driver: bridge

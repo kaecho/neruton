@@ -1,0 +1,26 @@
+# Rust build output
+/target
+**/*.rs.bk
+*.pdb
+
+# Next.js / Node artifacts
+web/node_modules
+web/.next
+web/out
+web/.swc
+
+# Git & local environment secrets
+.git
+.gitignore
+.env
+.env.*
+web/.env
+web/.env.*
+!.env.example
+
+# Misc build & temporary files
+dist
+artifacts
+*.log
+*.tmp
+.DS_Store

@@ -1,0 +1,43 @@
+[package]
+name = "neruton-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Neruton edge HTTP/WS server, wildcard subdomain router, and tunnel relay"
+
+[lib]
+name = "neruton_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "neruton-server"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+clap.workspace = true
+dashmap.workspace = true
+futures-util.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+neruton-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
+yamux.workspace = true
+
+[dev-dependencies]
+tokio-tungstenite.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }

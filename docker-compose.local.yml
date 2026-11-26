@@ -1,0 +1,15 @@
+# Local development / verification override (no cloudflared required).
+# Exposes neruton-server strictly on loopback 127.0.0.1:8080 while preserving
+# all NERUTON_* domain/scheme defaults from docker-compose.yml (override via env).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+services:
+  neruton-server:
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  cloudflared:
+    profiles:
+      - cloudflare
