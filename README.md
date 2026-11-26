@@ -139,16 +139,20 @@ Expand-Archive -Path "neruton.zip" -DestinationPath ".\neruton" -Force
    同时在 Cloudflare DNS 为 `neruton.moer.eu.org` 和 `*.moer.eu.org` 添加开启代理（Proxied）的 `CNAME` 记录指向 `<tunnel-id>.cfargotunnel.com`。
    > 提示：根据 RFC 1034，同一通配符名称 `*.moer.eu.org` 下若存在 `MX` 记录会与 `CNAME` 冲突，配置泛域名 `CNAME` 前需清理冲突的通配符记录（根域名 `moer.eu.org` 的记录不受影响）。
 
-3. **填入 Token 并启动服务**
-   编辑 `.env`，填入 `CLOUDFLARED_TUNNEL_TOKEN`（以及可选的 `NERUTON_AUTH_TOKEN`），然后执行：
+3. **填入 Token 并拉取预构建镜像启动（无需在服务器编译）**
+   编辑 `.env`，填入 `CLOUDFLARED_TUNNEL_TOKEN`（以及可选的 `NERUTON_AUTH_TOKEN`），直接拉取 GHCR 多架构镜像（`linux/amd64` + `linux/arm64`）并启动：
    ```bash
-   docker compose up -d --build
+   docker compose pull && docker compose up -d
    docker compose ps
    ```
+   镜像地址：
+   - `ghcr.io/kaecho/neruton-server:latest`
+   - `ghcr.io/kaecho/neruton-web:latest`
+
    整个栈仅使用内部桥接网络 `neruton-net`，宿主机 **0 端口监听**。
 
-4. **本地调试模式（无需 Cloudflare）**
-   如需在本地验证，可使用附带的覆盖文件仅在 `127.0.0.1:8080` 暴露服务端并跳过 `cloudflared`：
+4. **本地源码构建调试模式（无需 Cloudflare）**
+   如需在本地从源码构建验证，可使用附带的覆盖文件仅在 `127.0.0.1:8080` 暴露服务端并跳过 `cloudflared`：
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
    ```
@@ -157,6 +161,7 @@ Expand-Archive -Path "neruton.zip" -DestinationPath ".\neruton" -Force
 
 | 变量名 | 默认值 | 说明 |
 | --- | --- | --- |
+| `NERUTON_IMAGE_TAG` | `latest` | GHCR 镜像标签（如 `latest`、`v0.1.0`） |
 | `NERUTON_BASE_DOMAIN` | `moer.eu.org` | 泛域名根域（`<prefix>.<NERUTON_BASE_DOMAIN>`） |
 | `NERUTON_PANEL_HOST` | `neruton.moer.eu.org` | Web 控制台与隧道 WSS 接入域名 |
 | `NERUTON_PUBLIC_SCHEME` | `https` | 对外展示的协议方案（`https` 或 `http`） |
@@ -250,11 +255,11 @@ neruton config show
    }
    ```
 3. Point proxied `CNAME` DNS records for `neruton.moer.eu.org` and `*.moer.eu.org` to `<tunnel-id>.cfargotunnel.com`.
-4. Put your `CLOUDFLARED_TUNNEL_TOKEN` (and optional `NERUTON_AUTH_TOKEN`) into `.env` and start the stack:
+4. Put your `CLOUDFLARED_TUNNEL_TOKEN` (and optional `NERUTON_AUTH_TOKEN`) into `.env`, then pull the prebuilt multi-arch (`amd64`/`arm64`) GHCR images (`ghcr.io/kaecho/neruton-server` & `ghcr.io/kaecho/neruton-web`) and start the stack without compiling on the server:
    ```bash
-   docker compose up -d --build
+   docker compose pull && docker compose up -d
    ```
-5. **Local verification without Cloudflare** (binds `127.0.0.1:8080` only):
+5. **Local source-build verification without Cloudflare** (builds locally and binds `127.0.0.1:8080` only):
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
    ```

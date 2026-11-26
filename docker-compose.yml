@@ -1,19 +1,18 @@
 # Production Docker Compose stack for Neruton (Zero exposed host ports)
+# Pulls prebuilt multi-arch images from GHCR (no server-side compilation needed).
 # Traffic enters exclusively via the outbound `cloudflared` Cloudflare Tunnel
 # and is routed internally over `neruton-net` to `neruton-server:8080`.
 #
 # Usage:
 #   cp .env.example .env   # fill in CLOUDFLARED_TUNNEL_TOKEN
-#   docker compose up -d --build
+#   docker compose pull && docker compose up -d
 #
-# For local testing without Cloudflare (exposes 127.0.0.1:8080):
+# For local development/building from source without Cloudflare (exposes 127.0.0.1:8080):
 #   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 
 services:
   neruton-web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
+    image: ghcr.io/kaecho/neruton-web:${NERUTON_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -32,9 +31,7 @@ services:
       - neruton-net
 
   neruton-server:
-    build:
-      context: .
-      dockerfile: Dockerfile.server
+    image: ghcr.io/kaecho/neruton-server:${NERUTON_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       NERUTON_BIND: 0.0.0.0:8080
