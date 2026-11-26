@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { ModalDialog } from "@/components/GeistPrimitives";
 import { createUser, updateUser } from "@/lib/api";
 import { validateUsername } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import type { UserAdminView, UserRole } from "@/lib/types";
 
 interface CreateUserModalProps {
@@ -17,6 +18,7 @@ export function CreateUserModal({
   onClose,
   onCreated,
 }: CreateUserModalProps) {
+  const { locale, messages } = useI18n();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("user");
@@ -35,13 +37,13 @@ export function CreateUserModal({
     e.preventDefault();
     setError(null);
 
-    const userErr = validateUsername(username);
+    const userErr = validateUsername(username, locale);
     if (userErr) {
       setError(userErr);
       return;
     }
     if (password.length < 8) {
-      setError("密码长度至少为 8 位");
+      setError(messages.auth.passwordMinError);
       return;
     }
 
@@ -55,7 +57,11 @@ export function CreateUserModal({
       onCreated(created);
       handleClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "创建用户失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.users.createFailed,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -65,8 +71,8 @@ export function CreateUserModal({
     <ModalDialog
       open={open}
       onClose={handleClose}
-      title="新建用户"
-      description="为用户分配登录凭据与角色权限。"
+      title={messages.users.createTitle}
+      description={messages.users.createDesc}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
@@ -74,7 +80,7 @@ export function CreateUserModal({
             htmlFor="new-user-name"
             className="block text-xs font-medium text-foreground"
           >
-            用户名
+            {messages.auth.username}
           </label>
           <input
             id="new-user-name"
@@ -83,11 +89,11 @@ export function CreateUserModal({
             required
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="例如 alice"
+            placeholder={messages.users.usernamePlaceholder}
             className="h-9 w-full rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
           />
           <p className="text-[11px] text-tertiary">
-            3-32 位字母、数字或 . _ -
+            {messages.auth.usernameHint}
           </p>
         </div>
 
@@ -96,7 +102,7 @@ export function CreateUserModal({
             htmlFor="new-user-password"
             className="block text-xs font-medium text-foreground"
           >
-            初始密码
+            {messages.users.initialPassword}
           </label>
           <input
             id="new-user-password"
@@ -104,7 +110,7 @@ export function CreateUserModal({
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="至少 8 位字符"
+            placeholder={messages.auth.passwordMinHint}
             className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
           />
         </div>
@@ -114,7 +120,7 @@ export function CreateUserModal({
             htmlFor="new-user-role"
             className="block text-xs font-medium text-foreground"
           >
-            角色
+            {messages.users.colRole}
           </label>
           <select
             id="new-user-role"
@@ -122,8 +128,8 @@ export function CreateUserModal({
             onChange={(e) => setRole(e.target.value as UserRole)}
             className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground focus:border-foreground focus:outline-none"
           >
-            <option value="user">user（普通用户，仅管理自身隧道与令牌）</option>
-            <option value="admin">admin（管理员，完整网关控制权限）</option>
+            <option value="user">{messages.users.roleOptionUser}</option>
+            <option value="admin">{messages.users.roleOptionAdmin}</option>
           </select>
         </div>
 
@@ -142,14 +148,16 @@ export function CreateUserModal({
             onClick={handleClose}
             className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-xs text-secondary hover:text-foreground"
           >
-            取消
+            {messages.common.cancel}
           </button>
           <button
             type="submit"
             disabled={submitting}
             className="inline-flex h-8 items-center rounded-md bg-foreground px-4 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {submitting ? "创建中..." : "创建用户"}
+            {submitting
+              ? messages.common.creating
+              : messages.users.submitCreate}
           </button>
         </div>
       </form>
@@ -168,6 +176,7 @@ export function ResetPasswordModal({
   onClose,
   onUpdated,
 }: ResetPasswordModalProps) {
+  const { messages } = useI18n();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -186,11 +195,11 @@ export function ResetPasswordModal({
     setError(null);
 
     if (password.length < 8) {
-      setError("新密码长度至少为 8 位");
+      setError(messages.users.newPasswordMinError);
       return;
     }
     if (password !== confirm) {
-      setError("两次输入的密码不一致");
+      setError(messages.auth.passwordMismatchError);
       return;
     }
 
@@ -200,7 +209,11 @@ export function ResetPasswordModal({
       onUpdated(updated);
       handleClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "重置密码失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.users.resetFailed,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -210,8 +223,12 @@ export function ResetPasswordModal({
     <ModalDialog
       open={Boolean(target)}
       onClose={handleClose}
-      title={target ? `重置密码 · ${target.username}` : "重置密码"}
-      description="重置后该用户的现有登录会话将自动失效。"
+      title={
+        target
+          ? messages.users.resetTitleFor(target.username)
+          : messages.users.resetTitle
+      }
+      description={messages.users.resetDesc}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
@@ -219,7 +236,7 @@ export function ResetPasswordModal({
             htmlFor="reset-user-password"
             className="block text-xs font-medium text-foreground"
           >
-            新密码
+            {messages.users.newPassword}
           </label>
           <input
             id="reset-user-password"
@@ -228,7 +245,7 @@ export function ResetPasswordModal({
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="至少 8 位字符"
+            placeholder={messages.auth.passwordMinHint}
             className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
           />
         </div>
@@ -238,7 +255,7 @@ export function ResetPasswordModal({
             htmlFor="reset-user-confirm"
             className="block text-xs font-medium text-foreground"
           >
-            确认新密码
+            {messages.users.confirmNewPassword}
           </label>
           <input
             id="reset-user-confirm"
@@ -246,7 +263,7 @@ export function ResetPasswordModal({
             required
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            placeholder="再次输入新密码"
+            placeholder={messages.users.confirmNewPasswordPlaceholder}
             className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
           />
         </div>
@@ -266,14 +283,14 @@ export function ResetPasswordModal({
             onClick={handleClose}
             className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-xs text-secondary hover:text-foreground"
           >
-            取消
+            {messages.common.cancel}
           </button>
           <button
             type="submit"
             disabled={submitting}
             className="inline-flex h-8 items-center rounded-md bg-foreground px-4 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {submitting ? "保存中..." : "确认重置"}
+            {submitting ? messages.common.saving : messages.users.submitReset}
           </button>
         </div>
       </form>

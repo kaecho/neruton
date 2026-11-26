@@ -5,8 +5,10 @@ import { useAuth } from "@/components/AuthContext";
 import { useSharedStream } from "@/components/StreamContext";
 import { TrafficInspector } from "@/components/TrafficInspector";
 import { clearAllLogs } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
 export default function LogsPage() {
+  const { messages } = useI18n();
   const { user } = useAuth();
   const { logs, tunnels, sseState, clearLogsLocal } = useSharedStream();
   const [error, setError] = useState<string | null>(null);
@@ -19,19 +21,21 @@ export default function LogsPage() {
       await clearAllLogs();
       clearLogsLocal();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "清空日志失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.logs.clearFailed,
+      );
     }
-  }, [clearLogsLocal]);
+  }, [clearLogsLocal, messages.logs.clearFailed]);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          流量日志
+          {messages.logs.title}
         </h1>
-        <p className="mt-1 text-xs text-secondary">
-          实时观察通过泛域名与路径代理转发的 HTTP 及 WebSocket 请求。点击任意行可展开请求详情。
-        </p>
+        <p className="mt-1 text-xs text-secondary">{messages.logs.subtitle}</p>
       </div>
 
       {error ? (

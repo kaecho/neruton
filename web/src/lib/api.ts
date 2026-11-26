@@ -302,10 +302,8 @@ export function updateSettings(
 
 /* ── URL Helpers ──────────────────────────────────────────────────── */
 
-const DEFAULT_BASE_DOMAIN =
-  process.env.NEXT_PUBLIC_BASE_DOMAIN || "moer.eu.org";
-const DEFAULT_PANEL_HOST =
-  process.env.NEXT_PUBLIC_PANEL_HOST || "neruton.moer.eu.org";
+const DEFAULT_BASE_DOMAIN = process.env.NEXT_PUBLIC_BASE_DOMAIN || "";
+const DEFAULT_PANEL_HOST = process.env.NEXT_PUBLIC_PANEL_HOST || "";
 
 export function resolvePanelHost(
   info?: { panel_host?: string } | null,
@@ -314,7 +312,7 @@ export function resolvePanelHost(
   if (typeof window !== "undefined" && window.location.host) {
     return window.location.host;
   }
-  return DEFAULT_PANEL_HOST;
+  return DEFAULT_PANEL_HOST || "localhost";
 }
 
 export function resolveCliServerArg(
@@ -336,7 +334,7 @@ export function resolvePanelOrigin(
   if (typeof window !== "undefined") {
     return window.location.origin;
   }
-  return `https://${DEFAULT_PANEL_HOST}`;
+  return `https://${DEFAULT_PANEL_HOST || "localhost"}`;
 }
 
 export function resolveWildcardUrl(
@@ -346,7 +344,10 @@ export function resolveWildcardUrl(
 ): string {
   if (tunnel?.public_url) return tunnel.public_url;
   const scheme = info?.public_scheme || "https";
-  const baseDomain = info?.base_domain || DEFAULT_BASE_DOMAIN;
+  const baseDomain =
+    info?.base_domain ||
+    DEFAULT_BASE_DOMAIN ||
+    (typeof window !== "undefined" ? window.location.hostname : "localhost");
   return `${scheme}://${prefix}.${baseDomain}`;
 }
 

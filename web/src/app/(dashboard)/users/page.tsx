@@ -13,6 +13,7 @@ import {
   formatRelativeTime,
   formatShortDate,
 } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import type { UserAdminView, UserRole } from "@/lib/types";
 
 const CreateUserModal = dynamic(
@@ -26,6 +27,7 @@ const ResetPasswordModal = dynamic(
 );
 
 export default function UsersPage() {
+  const { locale, messages } = useI18n();
   const { user: currentUser, handleUnauthorized } = useAuth();
   const { refresh: refreshStream } = useSharedStream();
 
@@ -55,12 +57,16 @@ export default function UsersPage() {
           handleUnauthorized();
           return;
         }
-        setError(err instanceof Error ? err.message : "加载用户列表失败");
+        setError(
+          err instanceof Error && err.message
+            ? err.message
+            : messages.users.loadFailed,
+        );
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [isAdmin, handleUnauthorized],
+    [isAdmin, handleUnauthorized, messages.users.loadFailed],
   );
 
   useEffect(() => {
@@ -75,16 +81,16 @@ export default function UsersPage() {
       <div className="mx-auto max-w-md py-16 text-center">
         <p className="font-mono text-xs text-tertiary">403</p>
         <h1 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-          无访问权限
+          {messages.users.forbiddenTitle}
         </h1>
         <p className="mt-1.5 text-xs text-secondary">
-          用户管理页面仅对管理员开放。如需变更权限请联系系统管理员。
+          {messages.users.forbiddenDesc}
         </p>
         <Link
           href="/"
           className="mt-5 inline-flex h-8 items-center rounded-md border border-border bg-background px-3.5 text-xs font-medium text-foreground transition-colors hover:border-border-strong"
         >
-          返回概览
+          {messages.users.backToOverview}
         </Link>
       </div>
     );
@@ -102,7 +108,11 @@ export default function UsersPage() {
         void refreshStream();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新用户状态失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.users.updateStatusFailed,
+      );
     } finally {
       setBusyId(null);
     }
@@ -118,7 +128,11 @@ export default function UsersPage() {
         prev.map((item) => (item.id === updated.id ? updated : item)),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新用户角色失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.users.updateRoleFailed,
+      );
     } finally {
       setBusyId(null);
     }
@@ -133,7 +147,11 @@ export default function UsersPage() {
       setConfirmDeleteId(null);
       void refreshStream();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除用户失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.users.deleteFailed,
+      );
     } finally {
       setBusyId(null);
     }
@@ -144,10 +162,10 @@ export default function UsersPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            用户管理
+            {messages.users.title}
           </h1>
           <p className="mt-1 text-xs text-secondary">
-            管理系统账户、角色权限与活跃状态；禁用或删除用户将立即断开其所有隧道。
+            {messages.users.subtitle}
           </p>
         </div>
 
@@ -157,7 +175,7 @@ export default function UsersPage() {
           className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-3.5 text-xs font-medium text-background transition-opacity hover:opacity-90"
         >
           <Plus className="h-3.5 w-3.5" />
-          <span>新建用户</span>
+          <span>{messages.users.createButton}</span>
         </button>
       </div>
 
@@ -173,25 +191,35 @@ export default function UsersPage() {
       <div className="overflow-hidden rounded-lg border border-border bg-background">
         {loading ? (
           <div className="px-4 py-12 text-center text-xs text-secondary">
-            正在加载用户列表...
+            {messages.users.loading}
           </div>
         ) : users.length === 0 ? (
           <div className="px-4 py-12 text-center text-xs text-secondary">
-            暂无用户记录
+            {messages.users.empty}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[880px] border-collapse text-left">
               <thead className="border-b border-border bg-surface text-[11px] font-medium text-secondary">
                 <tr>
-                  <th className="py-2.5 pl-4 pr-3">用户名</th>
-                  <th className="px-3 py-2.5">角色</th>
-                  <th className="px-3 py-2.5">状态</th>
-                  <th className="px-3 py-2.5 text-right">令牌数</th>
-                  <th className="px-3 py-2.5 text-right">活跃隧道</th>
-                  <th className="px-3 py-2.5">最后登录</th>
-                  <th className="px-3 py-2.5">创建时间</th>
-                  <th className="py-2.5 pl-3 pr-4 text-right">操作</th>
+                  <th className="py-2.5 pl-4 pr-3">
+                    {messages.users.colUsername}
+                  </th>
+                  <th className="px-3 py-2.5">{messages.users.colRole}</th>
+                  <th className="px-3 py-2.5">{messages.users.colStatus}</th>
+                  <th className="px-3 py-2.5 text-right">
+                    {messages.users.colTokens}
+                  </th>
+                  <th className="px-3 py-2.5 text-right">
+                    {messages.users.colActiveTunnels}
+                  </th>
+                  <th className="px-3 py-2.5">
+                    {messages.users.colLastLogin}
+                  </th>
+                  <th className="px-3 py-2.5">{messages.users.colCreated}</th>
+                  <th className="py-2.5 pl-3 pr-4 text-right">
+                    {messages.users.colActions}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -212,7 +240,7 @@ export default function UsersPage() {
                           </span>
                           {isSelf ? (
                             <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] text-secondary">
-                              当前
+                              {messages.common.current}
                             </span>
                           ) : null}
                         </div>
@@ -235,22 +263,28 @@ export default function UsersPage() {
                           <Switch
                             checked={item.enabled}
                             disabled={isBusy || isSelf}
-                            label={`切换用户 ${item.username} 启用状态`}
+                            label={messages.users.toggleAria(item.username)}
                             onChange={() => void handleToggleEnabled(item)}
                           />
                           <span className="inline-flex items-center gap-1.5 text-xs text-secondary">
-                            <StatusDot tone={item.enabled ? "online" : "muted"} />
-                            <span>{item.enabled ? "启用" : "禁用"}</span>
+                            <StatusDot
+                              tone={item.enabled ? "online" : "muted"}
+                            />
+                            <span>
+                              {item.enabled
+                                ? messages.common.enabled
+                                : messages.common.disabled}
+                            </span>
                           </span>
                         </div>
                       </td>
 
                       <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-xs tabular-nums text-secondary">
-                        {formatNumber(item.token_count)}
+                        {formatNumber(item.token_count, locale)}
                       </td>
 
                       <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-xs tabular-nums text-secondary">
-                        {formatNumber(item.active_tunnel_count)}
+                        {formatNumber(item.active_tunnel_count, locale)}
                       </td>
 
                       <td
@@ -261,7 +295,7 @@ export default function UsersPage() {
                             : undefined
                         }
                       >
-                        {formatRelativeTime(item.last_login_at)}
+                        {formatRelativeTime(item.last_login_at, locale)}
                       </td>
 
                       <td className="whitespace-nowrap px-3 py-3 font-mono text-[11px] tabular-nums text-secondary">
@@ -277,7 +311,9 @@ export default function UsersPage() {
                               onClick={() => void handleDelete(item.id)}
                               className="inline-flex h-7 items-center rounded-md bg-red-600 px-2.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                             >
-                              {isBusy ? "删除中..." : "确认删除"}
+                              {isBusy
+                                ? messages.common.deleting
+                                : messages.users.confirmDelete}
                             </button>
                             <button
                               type="button"
@@ -285,7 +321,7 @@ export default function UsersPage() {
                               onClick={() => setConfirmDeleteId(null)}
                               className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 text-[11px] text-secondary hover:text-foreground"
                             >
-                              取消
+                              {messages.common.cancel}
                             </button>
                           </div>
                         ) : (
@@ -295,11 +331,15 @@ export default function UsersPage() {
                               disabled={isBusy || isSelf}
                               onClick={() => void handleToggleRole(item)}
                               title={
-                                isSelf ? "不可修改当前登录账户角色" : undefined
+                                isSelf
+                                  ? messages.users.cannotChangeOwnRole
+                                  : undefined
                               }
                               className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2.5 text-[11px] text-secondary transition-colors hover:border-border-strong hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              {item.role === "admin" ? "设为普通用户" : "设为管理员"}
+                              {item.role === "admin"
+                                ? messages.users.makeUser
+                                : messages.users.makeAdmin}
                             </button>
                             <button
                               type="button"
@@ -307,16 +347,20 @@ export default function UsersPage() {
                               onClick={() => setResetTarget(item)}
                               className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2.5 text-[11px] text-secondary transition-colors hover:border-border-strong hover:text-foreground disabled:opacity-40"
                             >
-                              重置密码
+                              {messages.users.resetPassword}
                             </button>
                             <button
                               type="button"
                               disabled={isBusy || isSelf}
-                              title={isSelf ? "不可删除当前登录账户" : undefined}
+                              title={
+                                isSelf
+                                  ? messages.users.cannotDeleteSelf
+                                  : undefined
+                              }
                               onClick={() => setConfirmDeleteId(item.id)}
                               className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2.5 text-[11px] text-secondary transition-colors hover:border-red-500/40 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-red-400"
                             >
-                              删除
+                              {messages.common.delete}
                             </button>
                           </div>
                         )}

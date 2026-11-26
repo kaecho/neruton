@@ -1,16 +1,27 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { Moon, Sun } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { Logo } from "@/components/Logo";
-import { SetupAccountView } from "@/components/SetupAccountView";
+import { useTheme } from "@/hooks/useTheme";
 import { loginAccount } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+
+const SetupAccountView = dynamic(
+  () =>
+    import("@/components/SetupAccountView").then((m) => m.SetupAccountView),
+  { ssr: false },
+);
 
 export default function LoginPage() {
   const router = useRouter();
+  const { messages } = useI18n();
+  const { theme, toggleTheme, mounted: themeMounted } = useTheme();
   const {
-    status,
     needsSetup,
     authenticated,
     isLoading,
@@ -29,23 +40,48 @@ export default function LoginPage() {
     }
   }, [isLoading, authenticated, needsSetup, pendingInitialToken, router]);
 
+  const utilityBar = (
+    <div className="fixed right-4 top-4 z-20 flex items-center gap-2">
+      <LocaleSwitcher />
+      <button
+        type="button"
+        onClick={toggleTheme}
+        aria-label={messages.common.toggleTheme}
+        title={messages.common.toggleTheme}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-secondary transition-colors hover:border-border-strong hover:text-foreground"
+      >
+        {themeMounted && theme === "dark" ? (
+          <Sun className="h-4 w-4" />
+        ) : (
+          <Moon className="h-4 w-4" />
+        )}
+      </button>
+    </div>
+  );
+
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="relative flex min-h-screen items-center justify-center bg-background">
+        {utilityBar}
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
       </div>
     );
   }
 
   if (needsSetup || pendingInitialToken) {
-    return <SetupAccountView />;
+    return (
+      <div className="relative min-h-screen bg-background">
+        {utilityBar}
+        <SetupAccountView />
+      </div>
+    );
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!username.trim() || !password) {
-      setError("请输入用户名和密码");
+      setError(messages.auth.missingCredentials);
       return;
     }
 
@@ -58,37 +94,36 @@ export default function LoginPage() {
       completeLogin(res.user);
       router.replace("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "用户名或密码错误");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.auth.invalidCredentials,
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+      {utilityBar}
+
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center gap-2.5">
           <Logo className="h-6 w-6" />
-          <span className="text-base font-semibold tracking-tight text-foreground">
-            Neruton
-          </span>
+          <h1 className="text-base font-semibold tracking-tight text-foreground">
+            {messages.common.brand}
+          </h1>
         </div>
 
         <div className="rounded-lg border border-border bg-background p-6">
-          <h1 className="text-base font-semibold tracking-tight text-foreground">
-            登录控制台
-          </h1>
-          <p className="mt-1 text-xs text-secondary">
-            输入账户凭据以管理穿透隧道、令牌与访问日志。
-          </p>
-
-          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <label
                 htmlFor="login-username"
                 className="block text-xs font-medium text-foreground"
               >
-                用户名
+                {messages.auth.username}
               </label>
               <input
                 id="login-username"
@@ -98,7 +133,7 @@ export default function LoginPage() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="输入用户名"
+                placeholder={messages.auth.usernamePlaceholder}
                 className="h-9 w-full rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
             </div>
@@ -108,7 +143,7 @@ export default function LoginPage() {
                 htmlFor="login-password"
                 className="block text-xs font-medium text-foreground"
               >
-                密码
+                {messages.auth.password}
               </label>
               <input
                 id="login-password"
@@ -117,7 +152,7 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="输入密码"
+                placeholder={messages.auth.passwordPlaceholder}
                 className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
             </div>
@@ -136,16 +171,10 @@ export default function LoginPage() {
               disabled={submitting}
               className="flex h-9 w-full items-center justify-center rounded-md bg-foreground text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {submitting ? "正在登录..." : "登录"}
+              {submitting ? messages.auth.signingIn : messages.auth.signIn}
             </button>
           </form>
         </div>
-
-        {status?.base_domain ? (
-          <p className="mt-4 text-center font-mono text-[11px] text-tertiary">
-            {status.panel_host || status.base_domain} · v{status.version}
-          </p>
-        ) : null}
       </div>
     </div>
   );

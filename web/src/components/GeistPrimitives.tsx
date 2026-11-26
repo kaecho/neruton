@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Check, Copy, X } from "lucide-react";
 import { copyToClipboard } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 
 /* ── Accessible Geist Toggle Switch ──────────────────────────────── */
 
@@ -71,12 +72,16 @@ interface CopyButtonProps {
 
 export function CopyButton({
   text,
-  label = "复制",
-  copiedLabel = "已复制",
+  label,
+  copiedLabel,
   iconOnly = false,
   className = "",
 }: CopyButtonProps) {
+  const { messages } = useI18n();
   const [copied, setCopied] = useState(false);
+
+  const resolvedLabel = label ?? messages.common.copy;
+  const resolvedCopiedLabel = copiedLabel ?? messages.common.copied;
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -91,8 +96,8 @@ export function CopyButton({
     <button
       type="button"
       onClick={handleCopy}
-      title={copied ? copiedLabel : label}
-      aria-label={copied ? copiedLabel : label}
+      title={copied ? resolvedCopiedLabel : resolvedLabel}
+      aria-label={copied ? resolvedCopiedLabel : resolvedLabel}
       className={`inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background text-xs font-medium text-secondary transition-colors hover:border-border-strong hover:text-foreground ${
         iconOnly ? "h-7 w-7" : "h-7 px-2.5"
       } ${className}`}
@@ -102,7 +107,9 @@ export function CopyButton({
       ) : (
         <Copy className="h-3.5 w-3.5" />
       )}
-      {!iconOnly ? <span>{copied ? copiedLabel : label}</span> : null}
+      {!iconOnly ? (
+        <span>{copied ? resolvedCopiedLabel : resolvedLabel}</span>
+      ) : null}
     </button>
   );
 }
@@ -160,6 +167,8 @@ export function ModalDialog({
   preventBackdropClose = false,
   maxWidthClass = "max-w-md",
 }: ModalDialogProps) {
+  const { messages } = useI18n();
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -202,7 +211,7 @@ export function ModalDialog({
           <button
             type="button"
             onClick={onClose}
-            aria-label="关闭窗口"
+            aria-label={messages.common.closeDialog}
             className="rounded-md p-1 text-secondary transition-colors hover:bg-muted hover:text-foreground"
           >
             <X className="h-4 w-4" />

@@ -9,6 +9,8 @@ import type {
   TunnelInfo,
 } from "@/lib/types";
 
+export const STREAM_CONNECTION_ERROR = "__STREAM_CONNECTION_ERROR__";
+
 const MAX_LOGS = 200;
 const POLL_INTERVAL_MS = 3000;
 const SSE_RECONNECT_MS = 10000;
@@ -125,7 +127,9 @@ export function useNerutonStream(
         return;
       }
       const message =
-        err instanceof Error ? err.message : "无法连接到 Neruton 网关";
+        err instanceof Error && err.message
+          ? err.message
+          : STREAM_CONNECTION_ERROR;
       setError(message);
     } finally {
       if (mountedRef.current) {

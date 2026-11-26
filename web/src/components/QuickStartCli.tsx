@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight, Terminal } from "lucide-react";
 import { CodeBlock } from "@/components/GeistPrimitives";
 import { resolveCliServerArg, resolvePanelOrigin } from "@/lib/api";
 import { validateSubdomainPrefix } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import type { ServerInfo } from "@/lib/types";
 
 interface QuickStartCliProps {
@@ -31,6 +32,7 @@ export function QuickStartCli({
   defaultOpen = false,
   collapsible = true,
 }: QuickStartCliProps) {
+  const { locale, messages } = useI18n();
   const [open, setOpen] = useState(defaultOpen || !collapsible);
   const [targetUrl, setTargetUrl] = useState("http://localhost:3000");
   const [prefixMode, setPrefixMode] = useState<"uuid" | "custom">(
@@ -46,12 +48,14 @@ export function QuickStartCli({
   const panelOrigin = resolvePanelOrigin(info);
   const scheme = info?.public_scheme || "https";
   const baseDomain =
-    info?.base_domain || process.env.NEXT_PUBLIC_BASE_DOMAIN || "moer.eu.org";
-  const requireAuth = info ? (info.require_tunnel_auth ?? info.auth_required) : true;
+    info?.base_domain || process.env.NEXT_PUBLIC_BASE_DOMAIN || "example.com";
+  const requireAuth = info
+    ? (info.require_tunnel_auth ?? info.auth_required)
+    : true;
 
   const validation = useMemo(
-    () => validateSubdomainPrefix(customPrefix, reservedPrefixes),
-    [customPrefix, reservedPrefixes],
+    () => validateSubdomainPrefix(customPrefix, reservedPrefixes, locale),
+    [customPrefix, reservedPrefixes, locale],
   );
 
   const effectivePrefix =
@@ -80,14 +84,20 @@ export function QuickStartCli({
       parts.push("--token", tokenInput.trim());
     }
     return parts.join(" ");
-  }, [cliServer, sanitizedTarget, prefixMode, validation.normalized, tokenInput]);
+  }, [
+    cliServer,
+    sanitizedTarget,
+    prefixMode,
+    validation.normalized,
+    tokenInput,
+  ]);
 
   const expectedWildcardUrl = `${scheme}://${effectivePrefix}.${baseDomain}`;
   const expectedPreviewUrl = `${panelOrigin}/preview/${effectivePrefix}`;
 
   return (
     <section
-      aria-label="快速连接 CLI"
+      aria-label={messages.cli.sectionAria}
       className="rounded-lg border border-border bg-background"
     >
       {collapsible ? (
@@ -100,10 +110,10 @@ export function QuickStartCli({
           <div className="flex items-center gap-2">
             <Terminal className="h-4 w-4 text-secondary" />
             <span className="text-xs font-medium text-foreground">
-              快速连接 CLI
+              {messages.cli.title}
             </span>
             <span className="hidden text-xs text-secondary sm:inline">
-              生成本地客户端配置与启动命令
+              {messages.cli.subtitle}
             </span>
           </div>
           {open ? (
@@ -117,7 +127,7 @@ export function QuickStartCli({
           <div className="flex items-center gap-2">
             <Terminal className="h-4 w-4 text-secondary" />
             <span className="text-xs font-medium text-foreground">
-              启动隧道命令
+              {messages.cli.startTitle}
             </span>
           </div>
         </div>
@@ -134,7 +144,7 @@ export function QuickStartCli({
                 htmlFor="cli-target-url"
                 className="block text-xs font-medium text-foreground"
               >
-                本地服务地址
+                {messages.cli.localTarget}
               </label>
               <input
                 id="cli-target-url"
@@ -169,7 +179,7 @@ export function QuickStartCli({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-foreground">
-                  子域名前缀
+                  {messages.cli.subdomainPrefix}
                 </span>
                 <div className="inline-flex rounded-md border border-border bg-surface p-0.5 text-[11px]">
                   <button
@@ -181,7 +191,7 @@ export function QuickStartCli({
                         : "text-secondary hover:text-foreground"
                     }`}
                   >
-                    自动 UUID
+                    {messages.cli.autoUuid}
                   </button>
                   <button
                     type="button"
@@ -192,7 +202,7 @@ export function QuickStartCli({
                         : "text-secondary hover:text-foreground"
                     }`}
                   >
-                    自定义
+                    {messages.cli.custom}
                   </button>
                 </div>
               </div>
@@ -205,7 +215,7 @@ export function QuickStartCli({
                       value={customPrefix}
                       onChange={(e) => setCustomPrefix(e.target.value)}
                       placeholder="app-dev"
-                      aria-label="自定义子域名前缀"
+                      aria-label={messages.cli.customPrefixAria}
                       className="min-w-0 flex-1 bg-transparent px-2.5 font-mono text-xs text-foreground placeholder:text-tertiary focus:outline-none"
                     />
                     <span className="shrink-0 border-l border-border bg-surface px-2 py-1.5 font-mono text-[11px] text-secondary">
@@ -220,8 +230,9 @@ export function QuickStartCli({
                 </div>
               ) : (
                 <p className="text-[11px] leading-relaxed text-secondary">
-                  省略 <code className="font-mono text-foreground">--subdomain</code>{" "}
-                  时自动分配唯一 UUID 前缀。
+                  {messages.cli.uuidHintBefore}
+                  <code className="font-mono text-foreground">--subdomain</code>
+                  {messages.cli.uuidHintAfter}
                 </p>
               )}
             </div>
@@ -233,13 +244,13 @@ export function QuickStartCli({
                   htmlFor="cli-token-input"
                   className="text-xs font-medium text-foreground"
                 >
-                  隧道令牌
+                  {messages.cli.tunnelToken}
                 </label>
                 <Link
                   href="/tokens"
                   className="text-[11px] text-secondary underline-offset-4 hover:text-foreground hover:underline"
                 >
-                  管理令牌
+                  {messages.cli.manageTokens}
                 </Link>
               </div>
               <input
@@ -248,14 +259,16 @@ export function QuickStartCli({
                 value={tokenInput}
                 onChange={(e) => setTokenInput(e.target.value)}
                 placeholder={
-                  requireAuth ? "粘贴 ntk_... 令牌" : "可选（当前为开放模式）"
+                  requireAuth
+                    ? messages.cli.tokenPlaceholderRequired
+                    : messages.cli.tokenPlaceholderOptional
                 }
                 className="h-8 w-full rounded-md border border-border bg-background px-2.5 font-mono text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
               <p className="text-[11px] text-secondary">
                 {requireAuth
-                  ? "当前已强制开启隧道令牌鉴权，需先配置令牌。"
-                  : "当前为开放模式，可省略令牌或按需填入。"}
+                  ? messages.cli.authRequiredHint
+                  : messages.cli.authOpenHint}
               </p>
             </div>
           </div>
@@ -273,7 +286,7 @@ export function QuickStartCli({
                       : "text-secondary hover:text-foreground"
                   }`}
                 >
-                  启动隧道
+                  {messages.cli.tabStartTunnel}
                   {activeTab === "tunnel" ? (
                     <span className="absolute inset-x-0 bottom-0 h-[2px] bg-foreground" />
                   ) : null}
@@ -287,7 +300,7 @@ export function QuickStartCli({
                       : "text-secondary hover:text-foreground"
                   }`}
                 >
-                  保存令牌配置
+                  {messages.cli.tabSaveConfig}
                   {activeTab === "config" ? (
                     <span className="absolute inset-x-0 bottom-0 h-[2px] bg-foreground" />
                   ) : null}
@@ -306,13 +319,13 @@ export function QuickStartCli({
 
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-secondary">
               <span>
-                泛域名:{" "}
+                {messages.cli.wildcardLabel}{" "}
                 <code className="font-mono text-foreground">
                   {expectedWildcardUrl}
                 </code>
               </span>
               <span>
-                内嵌预览:{" "}
+                {messages.cli.previewLabel}{" "}
                 <code className="font-mono text-foreground">
                   {expectedPreviewUrl}
                 </code>

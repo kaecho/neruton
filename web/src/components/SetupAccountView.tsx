@@ -8,9 +8,11 @@ import { CodeBlock, CopyButton } from "@/components/GeistPrimitives";
 import { Logo } from "@/components/Logo";
 import { resolveCliServerArg, setupAdminAccount } from "@/lib/api";
 import { validateUsername } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 
 export function SetupAccountView() {
   const router = useRouter();
+  const { locale, messages } = useI18n();
   const {
     status,
     pendingInitialToken,
@@ -30,17 +32,17 @@ export function SetupAccountView() {
     e.preventDefault();
     setError(null);
 
-    const userErr = validateUsername(username);
+    const userErr = validateUsername(username, locale);
     if (userErr) {
       setError(userErr);
       return;
     }
     if (password.length < 8) {
-      setError("密码长度至少为 8 位");
+      setError(messages.auth.passwordMinError);
       return;
     }
     if (password !== confirmPassword) {
-      setError("两次输入的密码不一致");
+      setError(messages.auth.passwordMismatchError);
       return;
     }
 
@@ -52,7 +54,11 @@ export function SetupAccountView() {
       });
       completeSetup(res.user, res.initial_token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "初始化管理员账户失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.auth.setupFailed,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -66,7 +72,7 @@ export function SetupAccountView() {
   if (pendingInitialToken) {
     const secret = pendingInitialToken.secret;
     const configCmd = `neruton config set --token ${secret}`;
-    const tunnelCmd = `neruton tunnel --server ${cliServer} --url http://localhost:3000`;
+    const clientCmd = `neruton tunnel --server ${cliServer} --url http://localhost:3000`;
 
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
@@ -76,25 +82,25 @@ export function SetupAccountView() {
               <Check className="h-3.5 w-3.5" />
             </div>
             <h1 className="text-base font-semibold tracking-tight text-foreground">
-              管理员账户已初始化
+              {messages.auth.setupReadyTitle}
             </h1>
           </div>
 
           <p className="mt-2 text-xs leading-relaxed text-secondary">
-            系统已为您生成默认 CLI 隧道令牌（
+            {messages.auth.setupReadyDescBefore}
             <span className="font-mono text-foreground">
               {pendingInitialToken.token.name}
             </span>
-            ）。该密钥仅显示一次，关闭后无法再次查看，请妥善保存。
+            {messages.auth.setupReadyDescAfter}
           </p>
 
           <div className="mt-5 space-y-4">
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs font-medium text-foreground">
-                  默认隧道令牌（一次性密钥）
+                  {messages.auth.defaultTokenLabel}
                 </span>
-                <CopyButton text={secret} label="复制密钥" />
+                <CopyButton text={secret} label={messages.common.copySecret} />
               </div>
               <div className="overflow-x-auto rounded-md border border-border bg-surface px-3 py-2.5 font-mono text-xs text-foreground">
                 {secret}
@@ -103,10 +109,13 @@ export function SetupAccountView() {
 
             <div className="space-y-2">
               <span className="block text-xs font-medium text-foreground">
-                快速配置本地 CLI
+                {messages.auth.quickCliTitle}
               </span>
-              <CodeBlock label="1. 保存默认令牌" code={configCmd} />
-              <CodeBlock label="2. 启动穿透隧道" code={tunnelCmd} />
+              <CodeBlock label={messages.auth.stepSaveToken} code={configCmd} />
+              <CodeBlock
+                label={messages.auth.stepStartClient}
+                code={clientCmd}
+              />
             </div>
           </div>
 
@@ -116,7 +125,7 @@ export function SetupAccountView() {
               onClick={handleEnterDashboard}
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-4 text-xs font-medium text-background transition-opacity hover:opacity-90"
             >
-              <span>进入控制台</span>
+              <span>{messages.auth.enterConsole}</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -131,16 +140,16 @@ export function SetupAccountView() {
         <div className="mb-6 flex items-center gap-2.5">
           <Logo className="h-6 w-6" />
           <span className="text-base font-semibold tracking-tight text-foreground">
-            Neruton
+            {messages.common.brand}
           </span>
         </div>
 
         <div className="rounded-lg border border-border bg-background p-6">
           <h1 className="text-base font-semibold tracking-tight text-foreground">
-            初始化管理员账户
+            {messages.auth.setupTitle}
           </h1>
           <p className="mt-1 text-xs text-secondary">
-            首次运行需创建管理员账户，用于管理用户、隧道令牌与网关策略。
+            {messages.auth.setupSubtitle}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
@@ -149,7 +158,7 @@ export function SetupAccountView() {
                 htmlFor="setup-username"
                 className="block text-xs font-medium text-foreground"
               >
-                管理员用户名
+                {messages.auth.username}
               </label>
               <input
                 id="setup-username"
@@ -162,7 +171,7 @@ export function SetupAccountView() {
                 className="h-9 w-full rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
               <p className="text-[11px] text-tertiary">
-                3-32 位字母、数字或 . _ -
+                {messages.auth.usernameHint}
               </p>
             </div>
 
@@ -171,7 +180,7 @@ export function SetupAccountView() {
                 htmlFor="setup-password"
                 className="block text-xs font-medium text-foreground"
               >
-                密码
+                {messages.auth.password}
               </label>
               <input
                 id="setup-password"
@@ -180,7 +189,7 @@ export function SetupAccountView() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="至少 8 位字符"
+                placeholder={messages.auth.passwordMinHint}
                 className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
             </div>
@@ -190,7 +199,7 @@ export function SetupAccountView() {
                 htmlFor="setup-confirm"
                 className="block text-xs font-medium text-foreground"
               >
-                确认密码
+                {messages.auth.confirmPassword}
               </label>
               <input
                 id="setup-confirm"
@@ -199,7 +208,7 @@ export function SetupAccountView() {
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="再次输入密码"
+                placeholder={messages.auth.confirmPasswordPlaceholder}
                 className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
             </div>
@@ -218,16 +227,12 @@ export function SetupAccountView() {
               disabled={submitting}
               className="flex h-9 w-full items-center justify-center rounded-md bg-foreground text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {submitting ? "正在创建账户..." : "创建管理员账户"}
+              {submitting
+                ? messages.auth.creatingAccount
+                : messages.auth.createAdminButton}
             </button>
           </form>
         </div>
-
-        {status?.base_domain ? (
-          <p className="mt-4 text-center font-mono text-[11px] text-tertiary">
-            {status.panel_host || status.base_domain} · v{status.version}
-          </p>
-        ) : null}
       </div>
     </div>
   );

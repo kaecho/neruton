@@ -2,10 +2,13 @@
 
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/components/AuthContext";
+import { AUTH_CONNECTION_ERROR, useAuth } from "@/components/AuthContext";
+import { Logo } from "@/components/Logo";
+import { useI18n } from "@/lib/i18n";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const { messages } = useI18n();
   const {
     needsSetup,
     authenticated,
@@ -26,41 +29,41 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [shouldRedirectToLogin, router]);
 
-  if (isLoading) {
+  if (isLoading || shouldRedirectToLogin || (!authenticated && !error)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
-          <p className="text-xs text-secondary">正在验证会话状态</p>
-        </div>
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
       </div>
     );
   }
 
   if (error && !authenticated && !needsSetup) {
+    const detail =
+      error === AUTH_CONNECTION_ERROR
+        ? messages.auth.connectionErrorFallback
+        : error;
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-6 text-center">
+          <div className="mb-4 flex items-center justify-center gap-2">
+            <Logo className="h-5 w-5" />
+            <span className="text-sm font-semibold tracking-tight text-foreground">
+              {messages.common.brand}
+            </span>
+          </div>
           <h1 className="text-sm font-semibold tracking-tight text-foreground">
-            无法连接到网关服务
+            {messages.auth.connectionErrorTitle}
           </h1>
-          <p className="mt-1.5 font-mono text-xs text-secondary">{error}</p>
+          <p className="mt-1.5 font-mono text-xs text-secondary">{detail}</p>
           <button
             type="button"
             onClick={() => void refreshAuth()}
             className="mt-4 inline-flex h-8 items-center justify-center rounded-md bg-foreground px-4 text-xs font-medium text-background transition-opacity hover:opacity-90"
           >
-            重试连接
+            {messages.common.retry}
           </button>
         </div>
-      </div>
-    );
-  }
-
-  if (shouldRedirectToLogin || !authenticated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-xs text-secondary">正在跳转至登录页面</p>
       </div>
     );
   }

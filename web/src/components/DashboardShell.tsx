@@ -5,33 +5,40 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { Logo } from "@/components/Logo";
 import { useSharedStream } from "@/components/StreamContext";
 import { useTheme } from "@/hooks/useTheme";
+import { useI18n } from "@/lib/i18n";
 
 interface NavItem {
   href: string;
-  label: string;
+  key: "overview" | "tokens" | "logs" | "users" | "settings";
   adminOnly?: boolean;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
-  { href: "/", label: "概览" },
-  { href: "/tokens", label: "令牌" },
-  { href: "/logs", label: "日志" },
-  { href: "/users", label: "用户", adminOnly: true },
-  { href: "/settings", label: "设置" },
+  { href: "/", key: "overview" },
+  { href: "/tokens", key: "tokens" },
+  { href: "/logs", key: "logs" },
+  { href: "/users", key: "users", adminOnly: true },
+  { href: "/settings", key: "settings" },
 ];
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { messages } = useI18n();
   const { user, status, logout } = useAuth();
   const { info } = useSharedStream();
   const { theme, toggleTheme, mounted } = useTheme();
 
   const isAdmin = user?.role === "admin";
-  const baseDomain = info?.base_domain || status?.base_domain || "moer.eu.org";
+  const baseDomain =
+    info?.base_domain ||
+    status?.base_domain ||
+    process.env.NEXT_PUBLIC_BASE_DOMAIN ||
+    "";
 
   const visibleNav = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
 
@@ -52,20 +59,24 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold tracking-tight text-foreground"
             >
               <Logo className="h-5 w-5" />
-              <span>Neruton</span>
+              <span>{messages.common.brand}</span>
             </Link>
-            <span
-              aria-hidden="true"
-              className="text-border-strong select-none text-base font-light"
-            >
-              /
-            </span>
-            <span className="truncate font-mono text-xs text-secondary">
-              *.{baseDomain}
-            </span>
+            {baseDomain ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="select-none text-base font-light text-border-strong"
+                >
+                  /
+                </span>
+                <span className="truncate font-mono text-xs text-secondary">
+                  *.{baseDomain}
+                </span>
+              </>
+            ) : null}
           </div>
 
-          {/* Right: User context + Theme Toggle + Sign Out */}
+          {/* Right: User context + Language + Theme Toggle + Sign Out */}
           <div className="flex shrink-0 items-center gap-2">
             {user ? (
               <div className="flex items-center gap-2">
@@ -80,11 +91,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
             <div className="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
 
+            <LocaleSwitcher />
+
             <button
               type="button"
               onClick={toggleTheme}
-              aria-label="切换明暗主题"
-              title="切换明暗主题"
+              aria-label={messages.common.toggleTheme}
+              title={messages.common.toggleTheme}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-secondary transition-colors hover:border-border hover:bg-surface hover:text-foreground"
             >
               {mounted && theme === "dark" ? (
@@ -97,12 +110,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={handleLogout}
-              title="退出登录"
-              aria-label="退出登录"
+              title={messages.nav.signOutFull}
+              aria-label={messages.nav.signOutFull}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-transparent px-2 text-xs text-secondary transition-colors hover:border-border hover:bg-surface hover:text-foreground"
             >
               <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">退出</span>
+              <span className="hidden sm:inline">{messages.nav.signOut}</span>
             </button>
           </div>
         </div>
@@ -110,7 +123,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* Sticky Sub-Navigation Bar */}
       <nav
-        aria-label="主导航"
+        aria-label={messages.nav.mainNavAria}
         className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur-xs"
       >
         <div className="mx-auto flex h-11 max-w-6xl items-center gap-1 overflow-x-auto px-4 sm:px-6">
@@ -131,7 +144,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                     : "text-secondary hover:text-foreground"
                 }`}
               >
-                {item.label}
+                {messages.nav[item.key]}
                 {active ? (
                   <span
                     aria-hidden="true"

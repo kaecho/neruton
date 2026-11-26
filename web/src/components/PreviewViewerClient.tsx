@@ -19,10 +19,12 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { StatusDot } from "@/components/GeistPrimitives";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { QuickStartCli } from "@/components/QuickStartCli";
 import { useNerutonStream } from "@/hooks/useNerutonStream";
 import { ApiError, fetchTunnel, resolveWildcardUrl } from "@/lib/api";
 import { formatDurationMs } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import type { TunnelInfo, ViewportMode } from "@/lib/types";
 
 const TrafficInspector = dynamic(
@@ -35,12 +37,6 @@ interface PreviewViewerClientProps {
   prefix: string;
 }
 
-const VIEWPORT_MODES = [
-  { id: "desktop" as const, icon: Laptop, label: "桌面端 (100%)" },
-  { id: "tablet" as const, icon: Tablet, label: "平板 (768px)" },
-  { id: "mobile" as const, icon: Smartphone, label: "手机 (390px)" },
-];
-
 function normalizeSubPath(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed || trimmed === "/") return "/";
@@ -48,6 +44,7 @@ function normalizeSubPath(raw: string): string {
 }
 
 export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
+  const { messages } = useI18n();
   const { handleUnauthorized } = useAuth();
   const { info, tunnels, logs, sseState, isLoading, refresh } =
     useNerutonStream({
@@ -66,6 +63,13 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerExpanded, setDrawerExpanded] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+
+  useEffect(() => {
+    document.title = `${prefix} · ${messages.preview.titleSuffix} — ${messages.common.brand}`;
+    return () => {
+      document.title = messages.common.brand;
+    };
+  }, [prefix, messages.preview.titleSuffix, messages.common.brand]);
 
   const checkDirectTunnel = useCallback(async () => {
     setIsChecking(true);
@@ -125,6 +129,24 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
     setReloadNonce((n) => n + 1);
   };
 
+  const viewportModes = [
+    {
+      id: "desktop" as const,
+      icon: Laptop,
+      label: messages.preview.viewportDesktop,
+    },
+    {
+      id: "tablet" as const,
+      icon: Tablet,
+      label: messages.preview.viewportTablet,
+    },
+    {
+      id: "mobile" as const,
+      icon: Smartphone,
+      label: messages.preview.viewportMobile,
+    },
+  ];
+
   const viewportFrameClass =
     viewport === "desktop"
       ? "h-full w-full"
@@ -144,7 +166,9 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:border-border-strong"
             >
               <ArrowLeft className="h-3.5 w-3.5 text-secondary" />
-              <span className="hidden sm:inline">概览</span>
+              <span className="hidden sm:inline">
+                {messages.preview.backToOverview}
+              </span>
             </Link>
 
             <div className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-2.5">
@@ -180,8 +204,8 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
               type="button"
               onClick={handleReload}
               disabled={!isOnline}
-              title="重新加载预览"
-              aria-label="重新加载预览"
+              title={messages.preview.reloadPreview}
+              aria-label={messages.preview.reloadPreview}
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-secondary transition-colors hover:border-border-strong hover:text-foreground disabled:opacity-40"
             >
               <RotateCw
@@ -194,7 +218,7 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
                 className="shrink-0 select-none border-r border-border bg-surface px-2.5 py-1.5 font-mono text-[11px] text-secondary"
                 title={
                   activeTunnel
-                    ? `目标服务: ${activeTunnel.target_url}`
+                    ? messages.preview.targetService(activeTunnel.target_url)
                     : `/t/${prefix}`
                 }
               >
@@ -205,13 +229,13 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
                 value={addressInput}
                 onChange={(e) => setAddressInput(e.target.value)}
                 placeholder="/"
-                aria-label="子路径地址"
+                aria-label={messages.preview.subPathAria}
                 className="min-w-0 flex-1 bg-transparent px-2.5 font-mono text-xs text-foreground placeholder:text-tertiary focus:outline-none"
               />
               <button
                 type="submit"
                 disabled={!isOnline}
-                aria-label="跳转到路径"
+                aria-label={messages.preview.navigateAria}
                 className="inline-flex h-full items-center border-l border-border bg-surface px-2.5 text-secondary transition-colors hover:text-foreground disabled:opacity-40"
               >
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -219,14 +243,14 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
             </div>
           </form>
 
-          {/* Right: Viewport Switcher + External Links + Log Drawer Toggle */}
+          {/* Right: Viewport Switcher + External Links + Log Drawer Toggle + Language Switcher */}
           <div className="ml-auto flex items-center gap-1.5">
             <div
               className="hidden h-8 items-center rounded-md border border-border bg-surface p-0.5 sm:inline-flex"
               role="group"
-              aria-label="切换预览宽度"
+              aria-label={messages.preview.viewportGroupAria}
             >
-              {VIEWPORT_MODES.map((item) => {
+              {viewportModes.map((item) => {
                 const Icon = item.icon;
                 const active = viewport === item.id;
                 return (
@@ -253,10 +277,12 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
               href={wildcardUrl}
               target="_blank"
               rel="noopener noreferrer"
-              title={`打开泛域名: ${wildcardUrl}`}
+              title={messages.preview.openWildcardTitle(wildcardUrl)}
               className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-background px-2.5 text-xs text-secondary transition-colors hover:border-border-strong hover:text-foreground"
             >
-              <span className="hidden xl:inline">泛域名</span>
+              <span className="hidden xl:inline">
+                {messages.preview.wildcardShort}
+              </span>
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
 
@@ -264,7 +290,7 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
               href={baseIframePath}
               target="_blank"
               rel="noopener noreferrer"
-              title={`直连路径代理: ${baseIframePath}`}
+              title={messages.preview.openPathTitle(baseIframePath)}
               className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-background px-2.5 font-mono text-xs text-secondary transition-colors hover:border-border-strong hover:text-foreground"
             >
               <span className="hidden xl:inline">/t/</span>
@@ -279,14 +305,16 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
                   ? "border-foreground bg-foreground text-background"
                   : "border-border bg-background text-foreground hover:border-border-strong"
               }`}
-              title="切换实时请求日志抽屉"
+              title={messages.preview.toggleLogDrawer}
             >
               {drawerOpen ? (
                 <PanelBottomClose className="h-3.5 w-3.5" />
               ) : (
                 <PanelBottom className="h-3.5 w-3.5" />
               )}
-              <span className="hidden lg:inline">日志</span>
+              <span className="hidden lg:inline">
+                {messages.preview.logsShort}
+              </span>
               <span
                 className={`font-mono text-[11px] tabular-nums ${
                   drawerOpen ? "text-background/80" : "text-secondary"
@@ -295,6 +323,8 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
                 {logs.length}
               </span>
             </button>
+
+            <LocaleSwitcher />
           </div>
         </div>
       </header>
@@ -305,7 +335,8 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-xs text-secondary">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
             <p>
-              正在连接隧道 <span className="font-mono text-foreground">{prefix}</span>
+              {messages.preview.connectingTunnel}{" "}
+              <span className="font-mono text-foreground">{prefix}</span>
             </p>
           </div>
         ) : isOnline ? (
@@ -317,7 +348,9 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
             {viewport !== "desktop" ? (
               <div className="mb-2 flex items-center gap-2 font-mono text-[11px] text-secondary">
                 <span>
-                  {viewport === "tablet" ? "Tablet · 768px" : "Mobile · 390px"}
+                  {viewport === "tablet"
+                    ? messages.preview.viewportTabletBadge
+                    : messages.preview.viewportMobileBadge}
                 </span>
                 <span className="text-border-strong">/</span>
                 <span className="max-w-[240px] truncate">
@@ -332,11 +365,13 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
               </div>
             ) : null}
 
-            <div className={`relative overflow-hidden bg-white ${viewportFrameClass}`}>
+            <div
+              className={`relative overflow-hidden bg-white ${viewportFrameClass}`}
+            >
               <iframe
                 key={`${prefix}-${normalizedPath}-${reloadNonce}`}
                 src={iframeSrc}
-                title={`Neruton 预览: ${prefix}`}
+                title={messages.preview.iframeTitle(prefix)}
                 onLoad={() => setIframeLoading(false)}
                 className="h-full w-full border-0 bg-white"
                 allow="clipboard-read; clipboard-write; fullscreen"
@@ -349,16 +384,19 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
               <div className="rounded-lg border border-border bg-background p-6 text-center">
                 <div className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-2.5 py-1 text-xs text-secondary">
                   <StatusDot tone="error" />
-                  <span>隧道离线</span>
+                  <span>{messages.preview.tunnelOfflineBadge}</span>
                 </div>
                 <h1 className="mt-3 text-base font-semibold tracking-tight text-foreground">
-                  隧道当前未在线或不存在
+                  {messages.preview.tunnelOfflineHeading}
                 </h1>
                 <p className="mt-1.5 text-xs text-secondary">
-                  未找到前缀为{" "}
-                  <code className="font-mono text-foreground">{prefix}</code>{" "}
-                  的活跃隧道。客户端上线后页面将自动恢复预览（
-                  {sseState === "connected" ? "SSE 实时监听中" : "轮询检测中"}）。
+                  {messages.preview.tunnelOfflineDescBefore}
+                  <code className="font-mono text-foreground">{prefix}</code>
+                  {messages.preview.tunnelOfflineDescMid}
+                  {sseState === "connected"
+                    ? messages.preview.sseListening
+                    : messages.preview.pollingCheck}
+                  {messages.preview.tunnelOfflineDescEnd}
                 </p>
 
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
@@ -371,14 +409,14 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
                     <RefreshCw
                       className={`h-3.5 w-3.5 ${isChecking ? "animate-spin" : ""}`}
                     />
-                    <span>重新检测</span>
+                    <span>{messages.preview.recheck}</span>
                   </button>
                   <Link
                     href="/"
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-4 text-xs font-medium text-foreground transition-colors hover:border-border-strong"
                   >
                     <ArrowLeft className="h-3.5 w-3.5 text-secondary" />
-                    <span>返回概览</span>
+                    <span>{messages.preview.returnOverview}</span>
                   </Link>
                 </div>
               </div>
@@ -397,7 +435,7 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
       {/* Collapsible Bottom Request Log Drawer */}
       {drawerOpen ? (
         <aside
-          aria-label="当前隧道请求日志"
+          aria-label={messages.preview.drawerAria}
           className={`flex shrink-0 flex-col border-t border-border bg-background ${
             drawerExpanded ? "h-[48vh]" : "h-64"
           }`}
@@ -407,14 +445,22 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
               <span className="font-mono font-medium text-foreground">
                 {prefix}
               </span>
-              <span>实时请求日志</span>
+              <span>{messages.preview.drawerTitle}</span>
             </div>
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setDrawerExpanded((e) => !e)}
-                title={drawerExpanded ? "还原高度" : "展开高度"}
-                aria-label={drawerExpanded ? "还原高度" : "展开高度"}
+                title={
+                  drawerExpanded
+                    ? messages.preview.restoreHeight
+                    : messages.preview.expandHeight
+                }
+                aria-label={
+                  drawerExpanded
+                    ? messages.preview.restoreHeight
+                    : messages.preview.expandHeight
+                }
                 className="rounded p-1 text-secondary hover:bg-muted hover:text-foreground"
               >
                 {drawerExpanded ? (
@@ -426,8 +472,8 @@ export function PreviewViewerClient({ prefix }: PreviewViewerClientProps) {
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
-                title="关闭日志抽屉"
-                aria-label="关闭日志抽屉"
+                title={messages.preview.closeDrawer}
+                aria-label={messages.preview.closeDrawer}
                 className="rounded p-1 text-secondary hover:bg-muted hover:text-foreground"
               >
                 <PanelBottomClose className="h-3.5 w-3.5" />

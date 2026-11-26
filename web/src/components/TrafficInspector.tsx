@@ -18,6 +18,7 @@ import {
   formatClockTime,
   formatDurationMs,
 } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import type {
   RequestLog,
   SseConnectionState,
@@ -47,9 +48,13 @@ const HTTP_METHODS = [
 
 function getStatusColor(status: number): string {
   if (status === 101) return "text-blue-600 dark:text-blue-400";
-  if (status >= 200 && status < 300) return "text-emerald-600 dark:text-emerald-400";
+  if (status >= 200 && status < 300) {
+    return "text-emerald-600 dark:text-emerald-400";
+  }
   if (status >= 300 && status < 400) return "text-blue-600 dark:text-blue-400";
-  if (status >= 400 && status < 500) return "text-amber-600 dark:text-amber-400";
+  if (status >= 400 && status < 500) {
+    return "text-amber-600 dark:text-amber-400";
+  }
   if (status >= 500) return "text-red-600 dark:text-red-400";
   return "text-secondary";
 }
@@ -71,6 +76,7 @@ const LogRow = memo(function LogRow({
   rowKey,
   onNavigatePath,
 }: LogRowProps) {
+  const { messages } = useI18n();
   const totalSize = (log.bytes_in || 0) + (log.bytes_out || 0);
   const directPath = `/t/${encodeURIComponent(log.tunnel_prefix)}${log.path.startsWith("/") ? log.path : `/${log.path}`}`;
 
@@ -115,7 +121,9 @@ const LogRow = memo(function LogRow({
           </td>
         ) : null}
         <td className="whitespace-nowrap px-2.5 py-2 text-[11px] text-secondary">
-          {log.via === "path" ? "路径代理" : "泛域名"}
+          {log.via === "path"
+            ? messages.logs.viaPath
+            : messages.logs.viaSubdomain}
         </td>
         <td
           className="max-w-[340px] truncate px-2.5 py-2 font-mono text-xs text-foreground"
@@ -140,25 +148,31 @@ const LogRow = memo(function LogRow({
             <div className="flex flex-wrap items-start justify-between gap-4 text-[11px]">
               <dl className="grid flex-1 grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
-                  <dt className="text-tertiary">Host</dt>
+                  <dt className="text-tertiary">{messages.logs.detailHost}</dt>
                   <dd className="mt-0.5 font-mono text-foreground">
                     {log.host || "—"}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-tertiary">Client IP</dt>
+                  <dt className="text-tertiary">
+                    {messages.logs.detailClientIp}
+                  </dt>
                   <dd className="mt-0.5 font-mono text-foreground">
                     {log.client_ip || "—"}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-tertiary">流量 (入站 / 出站)</dt>
+                  <dt className="text-tertiary">
+                    {messages.logs.detailTraffic}
+                  </dt>
                   <dd className="mt-0.5 font-mono tabular-nums text-foreground">
                     {formatBytes(log.bytes_in)} / {formatBytes(log.bytes_out)}
                   </dd>
                 </div>
                 <div className="sm:col-span-2 lg:col-span-3">
-                  <dt className="text-tertiary">User-Agent</dt>
+                  <dt className="text-tertiary">
+                    {messages.logs.detailUserAgent}
+                  </dt>
                   <dd className="mt-0.5 break-all font-mono text-secondary">
                     {log.user_agent || "—"}
                   </dd>
@@ -175,7 +189,7 @@ const LogRow = memo(function LogRow({
                     }}
                     className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2.5 text-[11px] font-medium text-foreground transition-colors hover:border-border-strong"
                   >
-                    在预览中打开
+                    {messages.logs.openInPreview}
                   </button>
                 ) : (
                   <Link
@@ -183,7 +197,7 @@ const LogRow = memo(function LogRow({
                     onClick={(e) => e.stopPropagation()}
                     className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2.5 text-[11px] font-medium text-foreground transition-colors hover:border-border-strong"
                   >
-                    内嵌预览
+                    {messages.logs.embeddedPreview}
                   </Link>
                 )}
                 <a
@@ -193,7 +207,7 @@ const LogRow = memo(function LogRow({
                   onClick={(e) => e.stopPropagation()}
                   className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2.5 text-[11px] font-medium text-secondary transition-colors hover:border-border-strong hover:text-foreground"
                 >
-                  <span>新窗口</span>
+                  <span>{messages.logs.openNewTab}</span>
                   <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
@@ -215,6 +229,7 @@ export function TrafficInspector({
   canClear = false,
   onClearLogs,
 }: TrafficInspectorProps) {
+  const { messages } = useI18n();
   const [selectedPrefix, setSelectedPrefix] = useState("");
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
   const [viaFilter, setViaFilter] = useState<"all" | "subdomain" | "path">(
@@ -228,7 +243,8 @@ export function TrafficInspector({
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
 
-  const activePrefix = lockedPrefix !== undefined ? lockedPrefix : selectedPrefix;
+  const activePrefix =
+    lockedPrefix !== undefined ? lockedPrefix : selectedPrefix;
   const sourceLogs = paused ? frozenLogs : logs;
 
   const prefixOptions = useMemo(() => {
@@ -285,6 +301,12 @@ export function TrafficInspector({
     }
   };
 
+  const viaOptions = [
+    { id: "all" as const, label: messages.logs.viaAll },
+    { id: "subdomain" as const, label: messages.logs.viaSubdomain },
+    { id: "path" as const, label: messages.logs.viaPath },
+  ];
+
   return (
     <div
       className={
@@ -307,15 +329,15 @@ export function TrafficInspector({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索路径、Host 或 IP"
-              aria-label="搜索日志"
+              placeholder={messages.logs.searchPlaceholder}
+              aria-label={messages.logs.searchAria}
               className="h-8 w-44 rounded-md border border-border bg-background pl-8 pr-7 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none sm:w-56"
             />
             {query ? (
               <button
                 type="button"
                 onClick={() => setQuery("")}
-                aria-label="清除搜索"
+                aria-label={messages.logs.clearSearchAria}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-tertiary hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -328,10 +350,12 @@ export function TrafficInspector({
             <select
               value={activePrefix}
               onChange={(e) => setSelectedPrefix(e.target.value)}
-              aria-label="按隧道筛选"
+              aria-label={messages.logs.filterTunnelAria}
               className="h-8 rounded-md border border-border bg-background px-2.5 font-mono text-xs text-foreground focus:border-foreground focus:outline-none"
             >
-              <option value="">全部隧道 ({prefixOptions.length})</option>
+              <option value="">
+                {messages.logs.allTunnels(prefixOptions.length)}
+              </option>
               {prefixOptions.map((p) => (
                 <option key={p} value={p}>
                   {p}
@@ -344,25 +368,19 @@ export function TrafficInspector({
           <select
             value={methodFilter}
             onChange={(e) => setMethodFilter(e.target.value)}
-            aria-label="按请求方法筛选"
+            aria-label={messages.logs.filterMethodAria}
             className="h-8 rounded-md border border-border bg-background px-2.5 font-mono text-xs text-foreground focus:border-foreground focus:outline-none"
           >
             {HTTP_METHODS.map((m) => (
               <option key={m} value={m}>
-                {m === "ALL" ? "全部方法" : m}
+                {m === "ALL" ? messages.logs.allMethods : m}
               </option>
             ))}
           </select>
 
           {/* Via segmented filter */}
           <div className="inline-flex h-8 items-center rounded-md border border-border bg-surface p-0.5 text-xs">
-            {(
-              [
-                { id: "all", label: "全部" },
-                { id: "subdomain", label: "泛域名" },
-                { id: "path", label: "路径代理" },
-              ] as const
-            ).map((opt) => (
+            {viaOptions.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
@@ -393,12 +411,12 @@ export function TrafficInspector({
             />
             <span className="tabular-nums">
               {paused
-                ? "已暂停"
+                ? messages.logs.paused
                 : sseState === "connected"
-                  ? "实时"
-                  : "轮询"}
+                  ? messages.logs.live
+                  : messages.logs.polling}
               {" · "}
-              {filteredLogs.length} 条
+              {messages.logs.entriesCount(filteredLogs.length)}
             </span>
           </div>
 
@@ -414,12 +432,12 @@ export function TrafficInspector({
             {paused ? (
               <>
                 <Play className="h-3.5 w-3.5" />
-                <span>恢复</span>
+                <span>{messages.logs.resume}</span>
               </>
             ) : (
               <>
                 <Pause className="h-3.5 w-3.5" />
-                <span>暂停</span>
+                <span>{messages.logs.pause}</span>
               </>
             )}
           </button>
@@ -433,7 +451,9 @@ export function TrafficInspector({
                   onClick={() => void handleClear()}
                   className="inline-flex h-8 items-center rounded-md border border-red-500/40 bg-red-600 px-2.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
-                  {clearing ? "清空中..." : "确认清空"}
+                  {clearing
+                    ? messages.logs.clearing
+                    : messages.logs.confirmClear}
                 </button>
                 <button
                   type="button"
@@ -441,7 +461,7 @@ export function TrafficInspector({
                   onClick={() => setConfirmClear(false)}
                   className="inline-flex h-8 items-center rounded-md border border-border bg-background px-2 text-xs text-secondary hover:text-foreground"
                 >
-                  取消
+                  {messages.common.cancel}
                 </button>
               </div>
             ) : (
@@ -452,7 +472,7 @@ export function TrafficInspector({
                 className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-secondary transition-colors hover:border-red-500/40 hover:text-red-600 disabled:opacity-40 dark:hover:text-red-400"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                <span>清空日志</span>
+                <span>{messages.logs.clearLogs}</span>
               </button>
             )
           ) : null}
@@ -466,10 +486,12 @@ export function TrafficInspector({
         {filteredLogs.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
             <p className="text-xs font-medium text-foreground">
-              {sourceLogs.length === 0 ? "暂无流量记录" : "无匹配筛选条件的请求"}
+              {sourceLogs.length === 0
+                ? messages.logs.emptyNoLogs
+                : messages.logs.emptyNoMatch}
             </p>
             <p className="mt-1 text-xs text-secondary">
-              通过泛域名或路径代理访问活跃隧道时，请求将在此实时显示。
+              {messages.logs.emptyDesc}
             </p>
           </div>
         ) : (
@@ -477,17 +499,29 @@ export function TrafficInspector({
             <thead className="sticky top-0 z-10 border-b border-border bg-surface text-[11px] font-medium text-secondary">
               <tr>
                 <th className="w-7 py-2 pl-3 pr-1" />
-                <th className="whitespace-nowrap px-2.5 py-2">时间</th>
-                <th className="whitespace-nowrap px-2.5 py-2">方法</th>
-                <th className="whitespace-nowrap px-2.5 py-2">状态</th>
+                <th className="whitespace-nowrap px-2.5 py-2">
+                  {messages.logs.colTime}
+                </th>
+                <th className="whitespace-nowrap px-2.5 py-2">
+                  {messages.logs.colMethod}
+                </th>
+                <th className="whitespace-nowrap px-2.5 py-2">
+                  {messages.logs.colStatus}
+                </th>
                 {!lockedPrefix ? (
-                  <th className="whitespace-nowrap px-2.5 py-2">隧道前缀</th>
+                  <th className="whitespace-nowrap px-2.5 py-2">
+                    {messages.logs.colTunnelPrefix}
+                  </th>
                 ) : null}
-                <th className="whitespace-nowrap px-2.5 py-2">入口</th>
-                <th className="px-2.5 py-2">路径</th>
-                <th className="whitespace-nowrap px-2.5 py-2 text-right">耗时</th>
+                <th className="whitespace-nowrap px-2.5 py-2">
+                  {messages.logs.colEntry}
+                </th>
+                <th className="px-2.5 py-2">{messages.logs.colPath}</th>
+                <th className="whitespace-nowrap px-2.5 py-2 text-right">
+                  {messages.logs.colDuration}
+                </th>
                 <th className="whitespace-nowrap py-2 pl-2.5 pr-4 text-right">
-                  流量
+                  {messages.logs.colTraffic}
                 </th>
               </tr>
             </thead>

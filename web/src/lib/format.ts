@@ -1,3 +1,5 @@
+import type { Locale } from "@/lib/i18n";
+
 const DEFAULT_RESERVED_PREFIXES = new Set([
   "neruton",
   "www",
@@ -24,10 +26,15 @@ export function formatBytes(bytes: number | null | undefined): string {
   return `${scaled >= 100 || idx === 0 ? scaled.toFixed(0) : scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2)} ${units[idx]}`;
 }
 
-export function formatNumber(value: number | null | undefined): string {
+export function formatNumber(
+  value: number | null | undefined,
+  locale: Locale = "en",
+): string {
   const safe =
     typeof value === "number" && Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat("zh-CN").format(safe);
+  return new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US").format(
+    safe,
+  );
 }
 
 export function formatDurationMs(ms: number | null | undefined): string {
@@ -37,7 +44,10 @@ export function formatDurationMs(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
-export function formatUptime(secs: number | null | undefined): string {
+export function formatUptime(
+  secs: number | null | undefined,
+  locale: Locale = "en",
+): string {
   const total =
     typeof secs === "number" && Number.isFinite(secs)
       ? Math.max(0, Math.floor(secs))
@@ -47,6 +57,13 @@ export function formatUptime(secs: number | null | undefined): string {
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
 
+  if (locale === "zh") {
+    if (days > 0) return `${days}天 ${hours}时 ${minutes}分`;
+    if (hours > 0) return `${hours}时 ${minutes}分`;
+    if (minutes > 0) return `${minutes}分 ${seconds}秒`;
+    return `${seconds}秒`;
+  }
+
   if (days > 0) return `${days}d ${hours}h ${minutes}m`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   if (minutes > 0) return `${minutes}m ${seconds}s`;
@@ -55,20 +72,29 @@ export function formatUptime(secs: number | null | undefined): string {
 
 export function formatRelativeTime(
   iso: string | null | undefined,
+  locale: Locale = "en",
   nowMs = Date.now(),
 ): string {
-  if (!iso) return "从未";
+  if (!iso) return locale === "zh" ? "从未" : "Never";
   const ts = Date.parse(iso);
   if (Number.isNaN(ts)) return iso;
   const diffSec = Math.max(0, Math.floor((nowMs - ts) / 1000));
-  if (diffSec < 10) return "刚刚";
-  if (diffSec < 60) return `${diffSec} 秒前`;
+  if (diffSec < 10) return locale === "zh" ? "刚刚" : "Just now";
+  if (diffSec < 60) {
+    return locale === "zh" ? `${diffSec} 秒前` : `${diffSec}s ago`;
+  }
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} 分钟前`;
+  if (diffMin < 60) {
+    return locale === "zh" ? `${diffMin} 分钟前` : `${diffMin}m ago`;
+  }
   const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} 小时前`;
+  if (diffHr < 24) {
+    return locale === "zh" ? `${diffHr} 小时前` : `${diffHr}h ago`;
+  }
   const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 30) return `${diffDay} 天前`;
+  if (diffDay < 30) {
+    return locale === "zh" ? `${diffDay} 天前` : `${diffDay}d ago`;
+  }
   return formatShortDate(iso);
 }
 
@@ -103,13 +129,28 @@ export interface PrefixValidation {
 export function validateSubdomainPrefix(
   raw: string,
   extraReserved?: string[],
+  locale: Locale = "en",
 ): PrefixValidation {
   const normalized = raw.trim().toLowerCase();
   if (!normalized) {
-    return { valid: false, normalized, error: "请输入子域名前缀，例如 app-dev" };
+    return {
+      valid: false,
+      normalized,
+      error:
+        locale === "zh"
+          ? "请输入子域名前缀，例如 app-dev"
+          : "Enter a subdomain prefix, e.g. app-dev",
+    };
   }
   if (normalized.length > 63) {
-    return { valid: false, normalized, error: "前缀长度不能超过 63 个字符" };
+    return {
+      valid: false,
+      normalized,
+      error:
+        locale === "zh"
+          ? "前缀长度不能超过 63 个字符"
+          : "Prefix must be 63 characters or fewer",
+    };
   }
   if (
     DEFAULT_RESERVED_PREFIXES.has(normalized) ||
@@ -118,24 +159,37 @@ export function validateSubdomainPrefix(
     return {
       valid: false,
       normalized,
-      error: `"${normalized}" 为保留前缀，请更换其他名称`,
+      error:
+        locale === "zh"
+          ? `"${normalized}" 为保留前缀，请更换其他名称`
+          : `"${normalized}" is a reserved prefix`,
     };
   }
   if (!PREFIX_REGEX.test(normalized)) {
     return {
       valid: false,
       normalized,
-      error: "仅允许小写字母、数字和连字符 (-)，且不能以连字符开头或结尾",
+      error:
+        locale === "zh"
+          ? "仅允许小写字母、数字和连字符 (-)，且不能以连字符开头或结尾"
+          : "Use lowercase letters, numbers, and hyphens (-); cannot start or end with a hyphen",
     };
   }
   return { valid: true, normalized };
 }
 
-export function validateUsername(raw: string): string | null {
+export function validateUsername(
+  raw: string,
+  locale: Locale = "en",
+): string | null {
   const trimmed = raw.trim();
-  if (!trimmed) return "请输入用户名";
+  if (!trimmed) {
+    return locale === "zh" ? "请输入用户名" : "Enter a username";
+  }
   if (!USERNAME_REGEX.test(trimmed)) {
-    return "用户名需为 3-32 位字母、数字或 . _ -";
+    return locale === "zh"
+      ? "用户名需为 3-32 位字母、数字或 . _ -"
+      : "Username must be 3-32 characters (letters, numbers, . _ -)";
   }
   return null;
 }

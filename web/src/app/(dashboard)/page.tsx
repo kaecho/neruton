@@ -12,6 +12,7 @@ import { useAuth } from "@/components/AuthContext";
 import { CopyButton, StatusDot } from "@/components/GeistPrimitives";
 import { QuickStartCli } from "@/components/QuickStartCli";
 import { useSharedStream } from "@/components/StreamContext";
+import { STREAM_CONNECTION_ERROR } from "@/hooks/useNerutonStream";
 import {
   disconnectTunnel,
   fetchSettings,
@@ -25,6 +26,7 @@ import {
   formatUptime,
   isUuidLike,
 } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import type { ServerInfo, TunnelInfo } from "@/lib/types";
 
 interface TunnelRowProps {
@@ -46,6 +48,7 @@ const TunnelRow = memo(function TunnelRow({
   onCancelConfirm,
   onConfirmDisconnect,
 }: TunnelRowProps) {
+  const { locale, messages } = useI18n();
   const wildcardUrl = resolveWildcardUrl(tunnel.prefix, info, tunnel);
   const displayHost = wildcardUrl.replace(/^https?:\/\//, "");
   const isUuid = isUuidLike(tunnel.prefix);
@@ -54,7 +57,7 @@ const TunnelRow = memo(function TunnelRow({
     ? tunnel.token_name
       ? `${tunnel.owner_username} / ${tunnel.token_name}`
       : tunnel.owner_username
-    : tunnel.token_name || "匿名";
+    : tunnel.token_name || messages.common.anonymous;
 
   return (
     <tr className="transition-colors hover:bg-surface">
@@ -90,7 +93,7 @@ const TunnelRow = memo(function TunnelRow({
           </a>
           <CopyButton
             text={wildcardUrl}
-            label="复制泛域名链接"
+            label={messages.overview.copyWildcardUrl}
             iconOnly
             className="h-6 w-6"
           />
@@ -124,7 +127,7 @@ const TunnelRow = memo(function TunnelRow({
 
       {/* Requests / Traffic */}
       <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-xs tabular-nums text-secondary">
-        <span>{formatNumber(tunnel.requests_total)}</span>
+        <span>{formatNumber(tunnel.requests_total, locale)}</span>
         <span className="mx-1 text-border-strong">/</span>
         <span>{formatBytes(totalBytes)}</span>
       </td>
@@ -133,7 +136,7 @@ const TunnelRow = memo(function TunnelRow({
       <td className="whitespace-nowrap px-3 py-3">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-foreground">
           <StatusDot tone="online" />
-          <span>在线</span>
+          <span>{messages.common.online}</span>
         </span>
       </td>
 
@@ -147,7 +150,9 @@ const TunnelRow = memo(function TunnelRow({
               onClick={() => onConfirmDisconnect(tunnel.prefix)}
               className="inline-flex h-7 items-center rounded-md bg-red-600 px-2.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {disconnecting ? "断开中..." : "确认断开"}
+              {disconnecting
+                ? messages.overview.disconnecting
+                : messages.overview.confirmDisconnect}
             </button>
             <button
               type="button"
@@ -155,7 +160,7 @@ const TunnelRow = memo(function TunnelRow({
               onClick={onCancelConfirm}
               className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 text-[11px] text-secondary hover:text-foreground"
             >
-              取消
+              {messages.common.cancel}
             </button>
           </div>
         ) : (
@@ -165,14 +170,14 @@ const TunnelRow = memo(function TunnelRow({
               className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2.5 text-[11px] font-medium text-foreground transition-colors hover:border-border-strong"
             >
               <Monitor className="h-3 w-3 text-secondary" />
-              <span>预览</span>
+              <span>{messages.overview.preview}</span>
             </Link>
             <button
               type="button"
               onClick={() => onStartConfirm(tunnel.prefix)}
               className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2.5 text-[11px] text-secondary transition-colors hover:border-red-500/40 hover:text-red-600 dark:hover:text-red-400"
             >
-              断开
+              {messages.overview.disconnect}
             </button>
           </div>
         )}
@@ -182,6 +187,7 @@ const TunnelRow = memo(function TunnelRow({
 });
 
 export default function OverviewPage() {
+  const { locale, messages } = useI18n();
   const { user } = useAuth();
   const {
     info,
@@ -222,6 +228,10 @@ export default function OverviewPage() {
     ? (info.require_tunnel_auth ?? info.auth_required)
     : true;
   const recentLogs = logs.slice(0, 8);
+  const resolvedStreamError =
+    error === STREAM_CONNECTION_ERROR
+      ? messages.overview.streamErrorFallback
+      : error;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -251,13 +261,15 @@ export default function OverviewPage() {
         setConfirmPrefix(null);
       } catch (err) {
         setActionError(
-          err instanceof Error ? err.message : `断开隧道 ${prefix} 失败`,
+          err instanceof Error && err.message
+            ? err.message
+            : messages.overview.disconnectFailed(prefix),
         );
       } finally {
         setDisconnectingPrefix(null);
       }
     },
-    [removeTunnelLocal],
+    [removeTunnelLocal, messages],
   );
 
   return (
@@ -266,10 +278,10 @@ export default function OverviewPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            概览
+            {messages.overview.title}
           </h1>
           <p className="mt-1 text-xs text-secondary">
-            实时监控活跃隧道状态、鉴权策略与代理流量。
+            {messages.overview.subtitle}
           </p>
         </div>
 
@@ -286,10 +298,10 @@ export default function OverviewPage() {
             />
             <span>
               {sseState === "connected"
-                ? "SSE 实时连接"
+                ? messages.overview.sseConnected
                 : sseState === "polling"
-                  ? "轮询同步"
-                  : "连接中"}
+                  ? messages.overview.ssePolling
+                  : messages.overview.sseConnecting}
             </span>
           </div>
           <button
@@ -301,69 +313,83 @@ export default function OverviewPage() {
             <RefreshCw
               className={`h-3.5 w-3.5 text-secondary ${refreshing ? "animate-spin" : ""}`}
             />
-            <span>刷新</span>
+            <span>{messages.common.refresh}</span>
           </button>
         </div>
       </div>
 
       {/* Error banner */}
-      {error || actionError ? (
+      {resolvedStreamError || actionError ? (
         <div
           role="alert"
           className="rounded-md border border-red-500/30 bg-red-500/5 px-4 py-2.5 text-xs text-red-600 dark:text-red-400"
         >
-          {actionError || error}
+          {actionError || resolvedStreamError}
         </div>
       ) : null}
 
       {/* 4-Column Hairline Metrics Strip */}
       <section
-        aria-label="网关指标"
+        aria-label={messages.overview.metricsAria}
         className="grid grid-cols-1 divide-y divide-border overflow-hidden rounded-lg border border-border bg-background sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x"
       >
         <div className="p-4 sm:border-b sm:border-r lg:border-b-0 lg:border-r-0">
           <div className="flex items-center justify-between text-xs text-secondary">
-            <span>活跃隧道</span>
+            <span>{messages.overview.activeTunnels}</span>
             <StatusDot tone={tunnels.length > 0 ? "online" : "muted"} />
           </div>
           <div className="mt-2 font-mono text-2xl font-semibold tracking-tight tabular-nums text-foreground">
-            {isLoading && !info ? "—" : formatNumber(tunnels.length)}
+            {isLoading && !info ? "—" : formatNumber(tunnels.length, locale)}
           </div>
           <p className="mt-1 text-[11px] text-tertiary">
-            {isAdmin ? "全局活跃连接数" : "当前账户活跃连接"}
+            {isAdmin
+              ? messages.overview.activeTunnelsAdminSub
+              : messages.overview.activeTunnelsUserSub}
           </p>
         </div>
 
         <div className="p-4 sm:border-b lg:border-b-0">
-          <div className="text-xs text-secondary">累计请求</div>
-          <div className="mt-2 font-mono text-2xl font-semibold tracking-tight tabular-nums text-foreground">
-            {info ? formatNumber(info.total_requests) : "—"}
+          <div className="text-xs text-secondary">
+            {messages.overview.totalRequests}
           </div>
-          <p className="mt-1 text-[11px] text-tertiary">HTTP / WebSocket 总转发</p>
+          <div className="mt-2 font-mono text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+            {info ? formatNumber(info.total_requests, locale) : "—"}
+          </div>
+          <p className="mt-1 text-[11px] text-tertiary">
+            {messages.overview.totalRequestsSub}
+          </p>
         </div>
 
         <div className="p-4 sm:border-r lg:border-r-0">
           <div className="flex items-center justify-between text-xs text-secondary">
-            <span>隧道鉴权</span>
+            <span>{messages.overview.tunnelAuth}</span>
             <StatusDot tone={requireAuth ? "online" : "warn"} />
           </div>
           <div className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-            {info ? (requireAuth ? "已启用" : "开放模式") : "—"}
+            {info
+              ? requireAuth
+                ? messages.overview.authEnforced
+                : messages.overview.authOpen
+              : "—"}
           </div>
           <p className="mt-1 text-[11px] text-tertiary">
             <Link
               href={isAdmin ? "/settings" : "/tokens"}
               className="underline-offset-4 hover:text-foreground hover:underline"
             >
-              {isAdmin ? "前往设置调整策略" : "管理我的隧道令牌"}
+              {isAdmin
+                ? messages.overview.managePolicy
+                : messages.overview.manageMyTokens}
             </Link>
           </p>
         </div>
 
         <div className="p-4">
-          <div className="text-xs text-secondary">运行时间与版本</div>
+          <div className="text-xs text-secondary">
+            {messages.overview.uptimeAndVersion}
+          </div>
           <div className="mt-2 font-mono text-2xl font-semibold tracking-tight tabular-nums text-foreground">
-            {info ? formatUptime(info.uptime_secs) : "—"}
+            {info ? formatUptime(info.uptime_secs, locale) : "—"}
           </div>
           <p className="mt-1 font-mono text-[11px] text-tertiary">
             {info ? `neruton-server v${info.version}` : "—"}
@@ -372,11 +398,11 @@ export default function OverviewPage() {
       </section>
 
       {/* Active Tunnels Table */}
-      <section aria-label="活跃隧道列表" className="space-y-3">
+      <section aria-label={messages.overview.tunnelsSectionAria} className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold tracking-tight text-foreground">
-              活跃隧道
+              {messages.overview.activeTunnels}
             </h2>
             <span className="rounded-full border border-border bg-surface px-2 py-0.5 font-mono text-[11px] tabular-nums text-secondary">
               {tunnels.length}
@@ -386,23 +412,26 @@ export default function OverviewPage() {
             href="/tokens"
             className="text-xs text-secondary underline-offset-4 hover:text-foreground hover:underline"
           >
-            创建或管理隧道令牌
+            {messages.overview.manageTokensLink}
           </Link>
         </div>
 
         <div className="overflow-hidden rounded-lg border border-border bg-background">
           {isLoading && tunnels.length === 0 ? (
             <div className="px-4 py-12 text-center text-xs text-secondary">
-              正在加载隧道列表...
+              {messages.overview.loadingTunnels}
             </div>
           ) : tunnels.length === 0 ? (
             <div className="px-4 py-12 text-center">
               <p className="text-xs font-medium text-foreground">
-                暂无活跃隧道
+                {messages.overview.emptyTunnelsTitle}
               </p>
               <p className="mt-1 text-xs text-secondary">
-                在本地运行 <code className="font-mono text-foreground">neruton tunnel</code>{" "}
-                后，隧道将自动出现在此列表中。
+                {messages.overview.emptyTunnelsBefore}
+                <code className="font-mono text-foreground">
+                  neruton tunnel
+                </code>
+                {messages.overview.emptyTunnelsAfter}
               </p>
             </div>
           ) : (
@@ -410,14 +439,30 @@ export default function OverviewPage() {
               <table className="w-full min-w-[880px] border-collapse text-left">
                 <thead className="border-b border-border bg-surface text-[11px] font-medium text-secondary">
                   <tr>
-                    <th className="py-2.5 pl-4 pr-3">前缀</th>
-                    <th className="px-3 py-2.5">泛域名地址</th>
-                    <th className="px-3 py-2.5">目标地址</th>
-                    <th className="px-3 py-2.5">归属 / 令牌</th>
-                    <th className="px-3 py-2.5 text-right">延迟</th>
-                    <th className="px-3 py-2.5 text-right">请求 / 流量</th>
-                    <th className="px-3 py-2.5">状态</th>
-                    <th className="py-2.5 pl-3 pr-4 text-right">操作</th>
+                    <th className="py-2.5 pl-4 pr-3">
+                      {messages.overview.colPrefix}
+                    </th>
+                    <th className="px-3 py-2.5">
+                      {messages.overview.colWildcardUrl}
+                    </th>
+                    <th className="px-3 py-2.5">
+                      {messages.overview.colTargetUrl}
+                    </th>
+                    <th className="px-3 py-2.5">
+                      {messages.overview.colOwnerToken}
+                    </th>
+                    <th className="px-3 py-2.5 text-right">
+                      {messages.overview.colLatency}
+                    </th>
+                    <th className="px-3 py-2.5 text-right">
+                      {messages.overview.colReqTraffic}
+                    </th>
+                    <th className="px-3 py-2.5">
+                      {messages.overview.colStatus}
+                    </th>
+                    <th className="py-2.5 pl-3 pr-4 text-right">
+                      {messages.overview.colActions}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -451,16 +496,16 @@ export default function OverviewPage() {
       />
 
       {/* Recent Traffic Summary */}
-      <section aria-label="最近流量摘要" className="space-y-3">
+      <section aria-label={messages.overview.recentTrafficAria} className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold tracking-tight text-foreground">
-            最近流量
+            {messages.overview.recentTraffic}
           </h2>
           <Link
             href="/logs"
             className="inline-flex items-center gap-1 text-xs text-secondary transition-colors hover:text-foreground"
           >
-            <span>查看全部日志</span>
+            <span>{messages.overview.viewAllLogs}</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
@@ -468,19 +513,29 @@ export default function OverviewPage() {
         <div className="overflow-hidden rounded-lg border border-border bg-background">
           {recentLogs.length === 0 ? (
             <div className="px-4 py-10 text-center text-xs text-secondary">
-              暂无请求记录
+              {messages.overview.noRequests}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] border-collapse text-left">
                 <thead className="border-b border-border bg-surface text-[11px] font-medium text-secondary">
                   <tr>
-                    <th className="py-2 pl-4 pr-3">时间</th>
-                    <th className="px-3 py-2">方法</th>
-                    <th className="px-3 py-2">状态</th>
-                    <th className="px-3 py-2">隧道</th>
-                    <th className="px-3 py-2">路径</th>
-                    <th className="py-2 pl-3 pr-4 text-right">耗时</th>
+                    <th className="py-2 pl-4 pr-3">
+                      {messages.overview.colTime}
+                    </th>
+                    <th className="px-3 py-2">
+                      {messages.overview.colMethod}
+                    </th>
+                    <th className="px-3 py-2">
+                      {messages.overview.colStatus}
+                    </th>
+                    <th className="px-3 py-2">
+                      {messages.overview.colTunnel}
+                    </th>
+                    <th className="px-3 py-2">{messages.overview.colPath}</th>
+                    <th className="py-2 pl-3 pr-4 text-right">
+                      {messages.overview.colDuration}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -513,7 +568,7 @@ export default function OverviewPage() {
                       <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px] text-secondary">
                         <Link
                           href={`/preview/${encodeURIComponent(log.tunnel_prefix)}`}
-                          className="hover:text-foreground hover:underline underline-offset-4"
+                          className="underline-offset-4 hover:text-foreground hover:underline"
                         >
                           {log.tunnel_prefix}
                         </Link>

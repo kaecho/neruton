@@ -13,10 +13,12 @@ import {
   updateSettings,
 } from "@/lib/api";
 import { formatShortDate, validateSubdomainPrefix } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import type { SettingsResponse } from "@/lib/types";
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { locale, messages } = useI18n();
   const { user, handleUnauthorized, logout } = useAuth();
   const { patchRequireAuthLocal } = useSharedStream();
 
@@ -63,7 +65,9 @@ export default function SettingsPage() {
           return;
         }
         setSettingsError(
-          err instanceof Error ? err.message : "无法读取系统设置",
+          err instanceof Error && err.message
+            ? err.message
+            : messages.settings.loadFailed,
         );
       })
       .finally(() => {
@@ -71,7 +75,7 @@ export default function SettingsPage() {
       });
 
     return () => controller.abort();
-  }, [syncFromSettings, handleUnauthorized]);
+  }, [syncFromSettings, handleUnauthorized, messages.settings.loadFailed]);
 
   const handleToggleRequireAuth = async (next: boolean) => {
     if (!isAdmin) return;
@@ -83,7 +87,9 @@ export default function SettingsPage() {
       patchRequireAuthLocal(updated.require_tunnel_auth);
     } catch (err) {
       setSettingsError(
-        err instanceof Error ? err.message : "更新隧道鉴权策略失败",
+        err instanceof Error && err.message
+          ? err.message
+          : messages.settings.updateAuthFailed,
       );
     } finally {
       setTogglingAuth(false);
@@ -95,24 +101,27 @@ export default function SettingsPage() {
     const trimmed = newPrefixInput.trim().toLowerCase();
     if (!trimmed) return;
 
-    const validation = validateSubdomainPrefix(trimmed);
+    const validation = validateSubdomainPrefix(trimmed, undefined, locale);
     if (!validation.valid) {
-      // Allow adding even if already in default list? Check explicitly:
       if (settings?.default_reserved_prefixes.includes(trimmed)) {
-        setPrefixInputError(`"${trimmed}" 已属于系统内置保留前缀`);
+        setPrefixInputError(messages.settings.prefixAlreadyBuiltin(trimmed));
         return;
       }
-      setPrefixInputError(validation.error || "无效的子域名前缀");
+      setPrefixInputError(validation.error || messages.settings.prefixInvalid);
       return;
     }
 
     if (settings?.default_reserved_prefixes.includes(validation.normalized)) {
-      setPrefixInputError(`"${validation.normalized}" 已属于系统内置保留前缀`);
+      setPrefixInputError(
+        messages.settings.prefixAlreadyBuiltin(validation.normalized),
+      );
       return;
     }
 
     if (customReserved.includes(validation.normalized)) {
-      setPrefixInputError(`"${validation.normalized}" 已存在于列表中`);
+      setPrefixInputError(
+        messages.settings.prefixAlreadyAdded(validation.normalized),
+      );
       return;
     }
 
@@ -134,7 +143,7 @@ export default function SettingsPage() {
 
     const parsedMax = Number.parseInt(maxTunnelsInput.trim(), 10);
     if (Number.isNaN(parsedMax) || parsedMax < 0) {
-      setSettingsError("每用户最大隧道数必须为大于等于 0 的整数");
+      setSettingsError(messages.settings.maxTunnelsError);
       return;
     }
 
@@ -147,7 +156,11 @@ export default function SettingsPage() {
       syncFromSettings(updated);
       setPolicySavedNotice(true);
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : "保存策略失败");
+      setSettingsError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.settings.savePolicyFailed,
+      );
     } finally {
       setSavingPolicy(false);
     }
@@ -159,15 +172,15 @@ export default function SettingsPage() {
     setPasswordSuccess(false);
 
     if (!currentPassword) {
-      setPasswordError("请输入当前密码");
+      setPasswordError(messages.settings.currentPasswordRequired);
       return;
     }
     if (newPassword.length < 8) {
-      setPasswordError("新密码长度至少为 8 位");
+      setPasswordError(messages.users.newPasswordMinError);
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError("两次输入的新密码不一致");
+      setPasswordError(messages.settings.newPasswordMismatch);
       return;
     }
 
@@ -182,7 +195,11 @@ export default function SettingsPage() {
       setConfirmPassword("");
       setPasswordSuccess(true);
     } catch (err) {
-      setPasswordError(err instanceof Error ? err.message : "修改密码失败");
+      setPasswordError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.settings.changePasswordFailed,
+      );
     } finally {
       setSavingPassword(false);
     }
@@ -197,12 +214,12 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-4xl space-y-8">
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          设置
+          {messages.settings.title}
         </h1>
         <p className="mt-1 text-xs text-secondary">
           {isAdmin
-            ? "配置隧道鉴权策略、配额与保留前缀，并管理当前账户安全。"
-            : "管理当前账户密码与登录会话。"}
+            ? messages.settings.subtitleAdmin
+            : messages.settings.subtitleUser}
         </p>
       </div>
 
@@ -218,14 +235,14 @@ export default function SettingsPage() {
       {/* Admin Section 1: Tunnel Auth Strategy */}
       {isAdmin ? (
         <section
-          aria-label="隧道鉴权策略"
+          aria-label={messages.settings.authSectionAria}
           className="overflow-hidden rounded-lg border border-border bg-background"
         >
           <div className="flex flex-col justify-between gap-4 p-6 sm:flex-row sm:items-start">
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                  强制要求隧道 Token 鉴权
+                  {messages.settings.requireAuthTitle}
                 </h2>
                 {settings ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-foreground">
@@ -233,15 +250,17 @@ export default function SettingsPage() {
                       tone={settings.require_tunnel_auth ? "online" : "warn"}
                     />
                     <span>
-                      {settings.require_tunnel_auth ? "已启用" : "开放模式"}
+                      {settings.require_tunnel_auth
+                        ? messages.overview.authEnforced
+                        : messages.overview.authOpen}
                     </span>
                   </span>
                 ) : null}
               </div>
               <p className="max-w-xl text-xs leading-relaxed text-secondary">
                 {settings?.require_tunnel_auth ?? true
-                  ? "当前模式：所有 neruton CLI 连接必须携带有效令牌（ntk_...）或环境变量主令牌；匿名连接将被网关直接拒绝（HTTP 401）。"
-                  : "当前模式：开放模式允许未携带令牌的匿名 CLI 连接建立隧道；若客户端提供了令牌，网关仍会校验其有效性与前缀限制。"}
+                  ? messages.settings.requireAuthOnDesc
+                  : messages.settings.requireAuthOffDesc}
               </p>
             </div>
 
@@ -249,7 +268,7 @@ export default function SettingsPage() {
               <Switch
                 checked={settings?.require_tunnel_auth ?? true}
                 disabled={loadingSettings || togglingAuth || !settings}
-                label="切换强制要求隧道 Token 鉴权"
+                label={messages.settings.requireAuthToggleAria}
                 onChange={(next) => void handleToggleRequireAuth(next)}
               />
             </div>
@@ -257,13 +276,19 @@ export default function SettingsPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface px-6 py-3 text-xs text-secondary">
             <span>
-              环境变量主令牌（<code className="font-mono text-foreground">NERUTON_AUTH_TOKEN</code>）状态：
+              {messages.settings.envTokenLabelBefore}
+              <code className="font-mono text-foreground">
+                NERUTON_AUTH_TOKEN
+              </code>
+              {messages.settings.envTokenLabelAfter}
             </span>
             <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-foreground">
               <StatusDot
                 tone={settings?.env_token_configured ? "online" : "muted"}
               />
-              {settings?.env_token_configured ? "已配置" : "未配置"}
+              {settings?.env_token_configured
+                ? messages.settings.configured
+                : messages.settings.notConfigured}
             </span>
           </div>
         </section>
@@ -278,10 +303,10 @@ export default function SettingsPage() {
           <div className="space-y-6 p-6">
             <div>
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                隧道配额与保留前缀
+                {messages.settings.quotaTitle}
               </h2>
               <p className="mt-1 text-xs text-secondary">
-                控制单个用户的并发隧道上限，以及禁止通过 CLI 注册的系统保留子域名。
+                {messages.settings.quotaDesc}
               </p>
             </div>
 
@@ -292,10 +317,12 @@ export default function SettingsPage() {
                   htmlFor="max-tunnels-input"
                   className="text-xs font-medium text-foreground"
                 >
-                  单用户最大活跃隧道数
+                  {messages.settings.maxTunnelsLabel}
                 </label>
                 <p className="mt-1 text-[11px] text-secondary">
-                  设为 <code className="font-mono text-foreground">0</code> 表示不限制。
+                  {messages.settings.maxTunnelsHintBefore}
+                  <code className="font-mono text-foreground">0</code>
+                  {messages.settings.maxTunnelsHintAfter}
                 </p>
               </div>
               <div className="sm:col-span-2">
@@ -319,10 +346,10 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 gap-3 border-t border-border pt-5 sm:grid-cols-3 sm:items-start">
               <div>
                 <span className="text-xs font-medium text-foreground">
-                  系统内置保留前缀
+                  {messages.settings.builtinReservedLabel}
                 </span>
                 <p className="mt-1 text-[11px] text-secondary">
-                  内置核心路由与控制面板主机名，不可移除。
+                  {messages.settings.builtinReservedDesc}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5 sm:col-span-2">
@@ -344,10 +371,10 @@ export default function SettingsPage() {
                   htmlFor="custom-reserved-input"
                   className="text-xs font-medium text-foreground"
                 >
-                  自定义保留前缀
+                  {messages.settings.customReservedLabel}
                 </label>
                 <p className="mt-1 text-[11px] text-secondary">
-                  防止敏感子域名被隧道客户端抢占。
+                  {messages.settings.customReservedDesc}
                 </p>
               </div>
 
@@ -367,7 +394,7 @@ export default function SettingsPage() {
                         handleAddReservedPrefix();
                       }
                     }}
-                    placeholder="输入子域名前缀，如 billing"
+                    placeholder={messages.settings.customReservedPlaceholder}
                     className="h-9 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
                   />
                   <button
@@ -376,7 +403,7 @@ export default function SettingsPage() {
                     className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:border-border-strong"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    <span>添加</span>
+                    <span>{messages.settings.addPrefix}</span>
                   </button>
                 </div>
 
@@ -397,7 +424,7 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => handleRemoveReservedPrefix(prefix)}
-                          aria-label={`移除保留前缀 ${prefix}`}
+                          aria-label={messages.settings.removePrefixAria(prefix)}
                           className="rounded p-0.5 text-tertiary transition-colors hover:bg-muted hover:text-foreground"
                         >
                           <X className="h-3 w-3" />
@@ -407,7 +434,7 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <p className="text-[11px] text-tertiary">
-                    尚未添加自定义保留前缀。
+                    {messages.settings.noCustomReserved}
                   </p>
                 )}
               </div>
@@ -417,15 +444,17 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between border-t border-border bg-surface px-6 py-3">
             <span className="text-xs text-secondary">
               {policySavedNotice
-                ? "更改已保存并立即生效。"
-                : "更改保存后即时应用于新的隧道连接。"}
+                ? messages.settings.policySaved
+                : messages.settings.policyUnsavedHint}
             </span>
             <button
               type="submit"
               disabled={savingPolicy || loadingSettings}
               className="inline-flex h-8 items-center rounded-md bg-foreground px-4 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {savingPolicy ? "保存中..." : "保存更改"}
+              {savingPolicy
+                ? messages.common.saving
+                : messages.settings.saveChanges}
             </button>
           </div>
         </form>
@@ -440,10 +469,10 @@ export default function SettingsPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                账户安全
+                {messages.settings.accountSecurityTitle}
               </h2>
               <p className="mt-1 text-xs text-secondary">
-                修改当前登录账户的密码；修改后将刷新会话凭据，其他设备的旧会话会自动失效。
+                {messages.settings.accountSecurityDesc}
               </p>
             </div>
             {user ? (
@@ -452,7 +481,7 @@ export default function SettingsPage() {
                   {user.username} ({user.role})
                 </div>
                 <div className="tabular-nums text-tertiary">
-                  创建于 {formatShortDate(user.created_at)}
+                  {messages.settings.createdAt(formatShortDate(user.created_at))}
                 </div>
               </div>
             ) : null}
@@ -464,7 +493,7 @@ export default function SettingsPage() {
                 htmlFor="current-password"
                 className="block text-xs font-medium text-foreground"
               >
-                当前密码
+                {messages.settings.currentPassword}
               </label>
               <input
                 id="current-password"
@@ -472,7 +501,7 @@ export default function SettingsPage() {
                 autoComplete="current-password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="输入当前密码"
+                placeholder={messages.settings.currentPasswordPlaceholder}
                 className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
             </div>
@@ -482,7 +511,7 @@ export default function SettingsPage() {
                 htmlFor="new-password"
                 className="block text-xs font-medium text-foreground"
               >
-                新密码
+                {messages.settings.newPassword}
               </label>
               <input
                 id="new-password"
@@ -490,7 +519,7 @@ export default function SettingsPage() {
                 autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="至少 8 位字符"
+                placeholder={messages.auth.passwordMinHint}
                 className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
             </div>
@@ -500,7 +529,7 @@ export default function SettingsPage() {
                 htmlFor="confirm-password"
                 className="block text-xs font-medium text-foreground"
               >
-                确认新密码
+                {messages.settings.confirmNewPassword}
               </label>
               <input
                 id="confirm-password"
@@ -508,7 +537,7 @@ export default function SettingsPage() {
                 autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="再次输入新密码"
+                placeholder={messages.settings.confirmNewPasswordPlaceholder}
                 className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-tertiary focus:border-foreground focus:outline-none"
               />
             </div>
@@ -525,36 +554,38 @@ export default function SettingsPage() {
 
           {passwordSuccess ? (
             <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
-              密码已更新，当前会话已同步刷新。
+              {messages.settings.passwordUpdated}
             </div>
           ) : null}
         </div>
 
         <div className="flex items-center justify-between border-t border-border bg-surface px-6 py-3">
           <span className="text-xs text-secondary">
-            建议使用 12 位以上包含大小写字母与数字的组合密码。
+            {messages.settings.passwordRecommendation}
           </span>
           <button
             type="submit"
             disabled={savingPassword}
             className="inline-flex h-8 items-center rounded-md bg-foreground px-4 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {savingPassword ? "更新中..." : "修改密码"}
+            {savingPassword
+              ? messages.settings.updatingPassword
+              : messages.settings.updatePasswordButton}
           </button>
         </div>
       </form>
 
       {/* Sign Out Card */}
       <section
-        aria-label="退出登录"
+        aria-label={messages.settings.signOutSectionAria}
         className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-background px-6 py-4"
       >
         <div>
           <h2 className="text-sm font-semibold tracking-tight text-foreground">
-            退出当前会话
+            {messages.settings.signOutTitle}
           </h2>
           <p className="mt-0.5 text-xs text-secondary">
-            清除浏览器中的认证 Cookie 并返回登录界面。
+            {messages.settings.signOutDesc}
           </p>
         </div>
         <button
@@ -562,7 +593,7 @@ export default function SettingsPage() {
           onClick={() => void handleLogout()}
           className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3.5 text-xs font-medium text-foreground transition-colors hover:border-red-500/40 hover:text-red-600 dark:hover:text-red-400"
         >
-          退出登录
+          {messages.nav.signOutFull}
         </button>
       </section>
     </div>

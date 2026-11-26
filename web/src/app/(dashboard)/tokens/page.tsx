@@ -15,6 +15,7 @@ import {
   updateToken,
 } from "@/lib/api";
 import { formatRelativeTime, formatShortDate } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import type {
   CreateTokenResponse,
   SettingsResponse,
@@ -28,6 +29,7 @@ const CreateTokenModal = dynamic(
 );
 
 export default function TokensPage() {
+  const { locale, messages } = useI18n();
   const { user, handleUnauthorized } = useAuth();
   const { info, refresh: refreshStream } = useSharedStream();
 
@@ -57,12 +59,16 @@ export default function TokensPage() {
           handleUnauthorized();
           return;
         }
-        setError(err instanceof Error ? err.message : "加载令牌列表失败");
+        setError(
+          err instanceof Error && err.message
+            ? err.message
+            : messages.tokens.loadFailed,
+        );
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [handleUnauthorized],
+    [handleUnauthorized, messages.tokens.loadFailed],
   );
 
   useEffect(() => {
@@ -93,7 +99,11 @@ export default function TokensPage() {
         void refreshStream();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新令牌状态失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.tokens.updateFailed,
+      );
     } finally {
       setBusyId(null);
     }
@@ -108,7 +118,11 @@ export default function TokensPage() {
       setConfirmDeleteId(null);
       void refreshStream();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "吊销令牌失败");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : messages.tokens.revokeFailed,
+      );
     } finally {
       setBusyId(null);
     }
@@ -120,10 +134,10 @@ export default function TokensPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            隧道令牌
+            {messages.tokens.title}
           </h1>
           <p className="mt-1 text-xs text-secondary">
-            创建并管理 CLI 隧道接入凭据；禁用或吊销令牌将立即断开对应活跃隧道。
+            {messages.tokens.subtitle}
           </p>
         </div>
 
@@ -133,7 +147,7 @@ export default function TokensPage() {
           className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-3.5 text-xs font-medium text-background transition-opacity hover:opacity-90"
         >
           <Plus className="h-3.5 w-3.5" />
-          <span>创建令牌</span>
+          <span>{messages.tokens.createButton}</span>
         </button>
       </div>
 
@@ -142,12 +156,14 @@ export default function TokensPage() {
         <div className="flex items-center gap-2.5 text-xs">
           <StatusDot tone={requireAuth ? "online" : "warn"} />
           <span className="font-medium text-foreground">
-            {requireAuth ? "隧道鉴权已强制启用" : "当前处于开放模式"}
+            {requireAuth
+              ? messages.tokens.policyEnforcedTitle
+              : messages.tokens.policyOpenTitle}
           </span>
           <span className="text-secondary">
             {requireAuth
-              ? "所有 CLI 连接必须提供有效令牌。"
-              : "允许匿名 CLI 连接；若提供令牌仍会验证其权限。"}
+              ? messages.tokens.policyEnforcedDesc
+              : messages.tokens.policyOpenDesc}
           </span>
         </div>
         {isAdmin ? (
@@ -155,7 +171,7 @@ export default function TokensPage() {
             href="/settings"
             className="text-xs font-medium text-foreground underline-offset-4 hover:underline"
           >
-            前往策略设置
+            {messages.tokens.policySettingsLink}
           </Link>
         ) : null}
       </div>
@@ -173,13 +189,15 @@ export default function TokensPage() {
       <div className="overflow-hidden rounded-lg border border-border bg-background">
         {loading ? (
           <div className="px-4 py-12 text-center text-xs text-secondary">
-            正在加载令牌列表...
+            {messages.tokens.loading}
           </div>
         ) : tokens.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <p className="text-xs font-medium text-foreground">暂无隧道令牌</p>
+            <p className="text-xs font-medium text-foreground">
+              {messages.tokens.emptyTitle}
+            </p>
             <p className="mt-1 text-xs text-secondary">
-              点击右上角「创建令牌」生成一个新的 CLI 接入密钥。
+              {messages.tokens.emptyDesc}
             </p>
           </div>
         ) : (
@@ -187,14 +205,28 @@ export default function TokensPage() {
             <table className="w-full min-w-[780px] border-collapse text-left">
               <thead className="border-b border-border bg-surface text-[11px] font-medium text-secondary">
                 <tr>
-                  <th className="py-2.5 pl-4 pr-3">名称</th>
-                  <th className="px-3 py-2.5">密钥前缀</th>
-                  {isAdmin ? <th className="px-3 py-2.5">归属用户</th> : null}
-                  <th className="px-3 py-2.5">允许前缀</th>
-                  <th className="px-3 py-2.5">最后使用</th>
-                  <th className="px-3 py-2.5">创建时间</th>
-                  <th className="px-3 py-2.5">启用状态</th>
-                  <th className="py-2.5 pl-3 pr-4 text-right">操作</th>
+                  <th className="py-2.5 pl-4 pr-3">
+                    {messages.tokens.colName}
+                  </th>
+                  <th className="px-3 py-2.5">
+                    {messages.tokens.colKeyPrefix}
+                  </th>
+                  {isAdmin ? (
+                    <th className="px-3 py-2.5">{messages.tokens.colOwner}</th>
+                  ) : null}
+                  <th className="px-3 py-2.5">
+                    {messages.tokens.colAllowedPrefixes}
+                  </th>
+                  <th className="px-3 py-2.5">
+                    {messages.tokens.colLastUsed}
+                  </th>
+                  <th className="px-3 py-2.5">
+                    {messages.tokens.colCreated}
+                  </th>
+                  <th className="px-3 py-2.5">{messages.tokens.colState}</th>
+                  <th className="py-2.5 pl-3 pr-4 text-right">
+                    {messages.tokens.colActions}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -230,7 +262,9 @@ export default function TokensPage() {
                             ))}
                           </div>
                         ) : (
-                          <span className="text-xs text-tertiary">不限</span>
+                          <span className="text-xs text-tertiary">
+                            {messages.common.unlimited}
+                          </span>
                         )}
                       </td>
                       <td
@@ -241,7 +275,7 @@ export default function TokensPage() {
                             : undefined
                         }
                       >
-                        {formatRelativeTime(token.last_used_at)}
+                        {formatRelativeTime(token.last_used_at, locale)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 font-mono text-[11px] tabular-nums text-secondary">
                         {formatShortDate(token.created_at)}
@@ -251,11 +285,13 @@ export default function TokensPage() {
                           <Switch
                             checked={token.enabled}
                             disabled={isBusy}
-                            label={`切换令牌 ${token.name} 启用状态`}
+                            label={messages.tokens.toggleAria(token.name)}
                             onChange={() => void handleToggleEnabled(token)}
                           />
                           <span className="text-xs text-secondary">
-                            {token.enabled ? "启用" : "禁用"}
+                            {token.enabled
+                              ? messages.common.enabled
+                              : messages.common.disabled}
                           </span>
                         </div>
                       </td>
@@ -268,7 +304,9 @@ export default function TokensPage() {
                               onClick={() => void handleDelete(token.id)}
                               className="inline-flex h-7 items-center rounded-md bg-red-600 px-2.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                             >
-                              {isBusy ? "删除中..." : "确认吊销"}
+                              {isBusy
+                                ? messages.common.deleting
+                                : messages.tokens.confirmRevoke}
                             </button>
                             <button
                               type="button"
@@ -276,7 +314,7 @@ export default function TokensPage() {
                               onClick={() => setConfirmDeleteId(null)}
                               className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 text-[11px] text-secondary hover:text-foreground"
                             >
-                              取消
+                              {messages.common.cancel}
                             </button>
                           </div>
                         ) : (
@@ -286,7 +324,7 @@ export default function TokensPage() {
                             onClick={() => setConfirmDeleteId(token.id)}
                             className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2.5 text-[11px] text-secondary transition-colors hover:border-red-500/40 hover:text-red-600 disabled:opacity-40 dark:hover:text-red-400"
                           >
-                            吊销
+                            {messages.tokens.revoke}
                           </button>
                         )}
                       </td>

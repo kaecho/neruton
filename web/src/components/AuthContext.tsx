@@ -15,6 +15,8 @@ import type {
   UserPublic,
 } from "@/lib/types";
 
+export const AUTH_CONNECTION_ERROR = "__AUTH_CONNECTION_ERROR__";
+
 interface AuthContextValue {
   status: AuthStatusResponse | null;
   user: UserPublic | null;
@@ -48,7 +50,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return next;
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : "无法获取网关认证状态";
+        err instanceof Error && err.message
+          ? err.message
+          : AUTH_CONNECTION_ERROR;
       setError(msg);
       return null;
     } finally {
@@ -68,7 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((err) => {
         if (!active || controller.signal.aborted) return;
-        setError(err instanceof Error ? err.message : "无法获取网关认证状态");
+        setError(
+          err instanceof Error && err.message
+            ? err.message
+            : AUTH_CONNECTION_ERROR,
+        );
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -86,9 +94,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authenticated: true,
       user,
       panel_host: prev?.panel_host ?? "",
-      base_domain: prev?.base_domain ?? "moer.eu.org",
+      base_domain: prev?.base_domain ?? "",
       public_scheme: prev?.public_scheme ?? "https",
-      version: prev?.version ?? "0.2.0",
+      version: prev?.version ?? "",
     }));
     setError(null);
   }, []);
@@ -101,9 +109,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authenticated: true,
         user,
         panel_host: prev?.panel_host ?? "",
-        base_domain: prev?.base_domain ?? "moer.eu.org",
+        base_domain: prev?.base_domain ?? "",
         public_scheme: prev?.public_scheme ?? "https",
-        version: prev?.version ?? "0.2.0",
+        version: prev?.version ?? "",
       }));
       setError(null);
     },
