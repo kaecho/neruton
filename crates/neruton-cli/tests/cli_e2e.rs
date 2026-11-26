@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -8,12 +9,27 @@ use axum::http::HeaderMap;
 use axum::routing::get;
 use axum::Router;
 use futures_util::{SinkExt, StreamExt};
-use neruton_proto::TunnelInfo;
+use neruton_proto::{SetupResponse, TunnelInfo};
 use neruton_server::{build_app, AppState, ServerConfig};
+use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as TungMsg;
+
+struct TempDirGuard(PathBuf);
+
+impl TempDirGuard {
+    fn new() -> Self {
+        Self(std::env::temp_dir().join(format!("neruton-cli-e2e-{}", uuid::Uuid::new_v4())))
+    }
+}
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 #[test]
 fn cli_version_and_config_commands() {
@@ -25,7 +41,7 @@ fn cli_version_and_config_commands() {
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("neruton "));
+    assert!(stdout.contains("neruton 0.2.0"));
 
     let tmp_cfg =
         std::env::temp_dir().join(format!("neruton-test-cfg-{}.toml", uuid::Uuid::new_v4()));
@@ -37,7 +53,7 @@ fn cli_version_and_config_commands() {
             "--server",
             "https://custom.example.com",
             "--token",
-            "abc-token",
+            "ntk_abc123",
             "--config",
             tmp_cfg.to_str().unwrap(),
         ])
@@ -59,7 +75,89 @@ fn cli_version_and_config_commands() {
 }
 
 #[tokio::test]
-async fn real_cli_binary_end_to_end_http_ws_and_host_header() {
+async fn real_cli_binary_exits_cleanly_on_401_missing_or_invalid_token() {
+    let tmp = TempDirGuard::new();
+    let cfg = ServerConfig {
+        data_dir: tmp.0.clone(),
+        public_scheme: "http".to_string(),
+        require_auth: true,
+        ..ServerConfig::default()
+    };
+    let state = AppState::new(cfg).unwrap();
+    let server_app = build_app(state);
+    let server_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = server_listener.local_addr().unwrap();
+    let _server_task = tokio::spawn(async move {
+        axum::serve(
+            server_listener,
+            server_app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+
+    let bin = env!("CARGO_BIN_EXE_neruton");
+    let missing_cfg = tmp.0.join("nonexistent-cli-config.toml");
+
+    // 1. Missing token -> exits promptly with non-zero exit code & actionable message
+    let out = tokio::time::timeout(
+        Duration::from_secs(5),
+        Command::new(bin)
+            .args([
+                "http",
+                "3000",
+                "--server",
+                &format!("http://{server_addr}"),
+                "--config",
+                missing_cfg.to_str().unwrap(),
+            ])
+            .env("NO_COLOR", "1")
+            .env_remove("NERUTON_TOKEN")
+            .env_remove("NERUTON_AUTH_TOKEN")
+            .output(),
+    )
+    .await
+    .expect("CLI should exit promptly on 401 instead of looping")
+    .unwrap();
+
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("401 Unauthorized") && stderr.contains("neruton config set --token"),
+        "unexpected stderr: {stderr}"
+    );
+
+    // 2. Invalid token -> exits promptly with non-zero exit code
+    let out_bad = tokio::time::timeout(
+        Duration::from_secs(5),
+        Command::new(bin)
+            .args([
+                "http",
+                "3000",
+                "--server",
+                &format!("http://{server_addr}"),
+                "--token",
+                "ntk_invalid_secret_value",
+                "--config",
+                missing_cfg.to_str().unwrap(),
+            ])
+            .env("NO_COLOR", "1")
+            .output(),
+    )
+    .await
+    .expect("CLI should exit promptly on invalid token")
+    .unwrap();
+
+    assert!(!out_bad.status.success());
+    let stderr_bad = String::from_utf8_lossy(&out_bad.stderr);
+    assert!(
+        stderr_bad.contains("401 Unauthorized"),
+        "unexpected stderr: {stderr_bad}"
+    );
+}
+
+#[tokio::test]
+async fn real_cli_binary_end_to_end_with_user_token_http_ws_and_host_header() {
     // 1. Start local target HTTP + WS service
     let target_app = Router::new()
         .route(
@@ -96,8 +194,14 @@ async fn real_cli_binary_end_to_end_http_ws_and_host_header() {
         axum::serve(target_listener, target_app).await.unwrap();
     });
 
-    // 2. Start real neruton-server
-    let state = AppState::new(ServerConfig::default());
+    // 2. Start real neruton-server (default require_auth = true) and run initial setup
+    let tmp = TempDirGuard::new();
+    let cfg = ServerConfig {
+        data_dir: tmp.0.clone(),
+        public_scheme: "http".to_string(),
+        ..ServerConfig::default()
+    };
+    let state = AppState::new(cfg).unwrap();
     let server_app = build_app(state.clone());
     let server_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let server_addr = server_listener.local_addr().unwrap();
@@ -110,7 +214,24 @@ async fn real_cli_binary_end_to_end_http_ws_and_host_header() {
         .unwrap();
     });
 
-    // 3. Launch real `neruton http <port>` binary
+    let admin = reqwest::Client::builder()
+        .cookie_store(true)
+        .build()
+        .unwrap();
+    let setup: SetupResponse = admin
+        .post(format!("http://{server_addr}/_neruton/api/auth/setup"))
+        .json(&json!({
+            "username": "admin",
+            "password": "AdminPassword123!"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    // 3. Launch real `neruton http <port> --token ntk_...` binary
     let bin = env!("CARGO_BIN_EXE_neruton");
     let mut child = Command::new(bin)
         .args([
@@ -120,6 +241,8 @@ async fn real_cli_binary_end_to_end_http_ws_and_host_header() {
             &format!("http://{server_addr}"),
             "--subdomain",
             "cli-e2e",
+            "--token",
+            &setup.initial_token.secret,
         ])
         .env("NO_COLOR", "1")
         .stdout(Stdio::null())
@@ -129,10 +252,9 @@ async fn real_cli_binary_end_to_end_http_ws_and_host_header() {
         .unwrap();
 
     // Wait for tunnel registration
-    let client = reqwest::Client::new();
     let mut connected = false;
     for _ in 0..50 {
-        let resp = client
+        let resp = admin
             .get(format!("http://{server_addr}/_neruton/api/tunnels/cli-e2e"))
             .send()
             .await
@@ -146,7 +268,7 @@ async fn real_cli_binary_end_to_end_http_ws_and_host_header() {
     assert!(connected, "neruton CLI failed to register tunnel in time");
 
     // 4. Test wildcard HTTP request (Host header rewritten to 127.0.0.1:<port>)
-    let res = client
+    let res = admin
         .get(format!("http://{server_addr}/whoami"))
         .header("Host", "cli-e2e.moer.eu.org")
         .send()
@@ -170,7 +292,7 @@ async fn real_cli_binary_end_to_end_http_ws_and_host_header() {
 
     // 6. Wait briefly so initial 200ms WS ping/pong heartbeat runs and check TunnelInfo
     tokio::time::sleep(Duration::from_millis(350)).await;
-    let info: TunnelInfo = client
+    let info: TunnelInfo = admin
         .get(format!("http://{server_addr}/_neruton/api/tunnels/cli-e2e"))
         .send()
         .await
@@ -179,6 +301,8 @@ async fn real_cli_binary_end_to_end_http_ws_and_host_header() {
         .await
         .unwrap();
     assert_eq!(info.prefix, "cli-e2e");
+    assert_eq!(info.owner_username.as_deref(), Some("admin"));
+    assert_eq!(info.token_name.as_deref(), Some("Default CLI Token"));
     assert_eq!(info.requests_total, 2);
     assert!(
         info.latency_ms >= 1,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchLogs, fetchServerInfo, fetchTunnels } from "@/lib/api";
+import { ApiError, fetchLogs, fetchServerInfo, fetchTunnels } from "@/lib/api";
 import type {
   RequestLog,
   ServerInfo,
@@ -11,12 +11,13 @@ import type {
 
 const MAX_LOGS = 200;
 const POLL_INTERVAL_MS = 3000;
-const SSE_RECONNECT_MS = 12000;
-const CONNECTED_SYNC_MS = 10000;
+const SSE_RECONNECT_MS = 10000;
+const CONNECTED_SYNC_MS = 15000;
 
 interface UseNerutonStreamOptions {
-  /** Optional prefix filter when used inside /preview/[prefix] */
+  enabled?: boolean;
   prefixFilter?: string;
+  onUnauthorized?: () => void;
 }
 
 export interface UseNerutonStreamResult {
@@ -28,6 +29,9 @@ export interface UseNerutonStreamResult {
   error: string | null;
   lastUpdatedAt: number | null;
   refresh: () => Promise<void>;
+  clearLogsLocal: () => void;
+  removeTunnelLocal: (prefix: string) => void;
+  patchRequireAuthLocal: (requireAuth: boolean) => void;
 }
 
 function isTunnelInfo(obj: unknown): obj is TunnelInfo {
@@ -56,13 +60,19 @@ function extractRecord(raw: unknown): Record<string, unknown> | null {
   return null;
 }
 
-function mergeLogs(existing: RequestLog[], incoming: RequestLog[]): RequestLog[] {
+function mergeLogs(
+  existing: RequestLog[],
+  incoming: RequestLog[],
+): RequestLog[] {
   const byId = new Map<string, RequestLog>();
   for (const log of incoming) {
-    byId.set(log.id || `${log.timestamp}-${log.tunnel_prefix}-${log.path}-${Math.random()}`, log);
+    const key =
+      log.id || `${log.timestamp}-${log.tunnel_prefix}-${log.path}-${log.status}`;
+    byId.set(key, log);
   }
   for (const log of existing) {
-    const key = log.id || `${log.timestamp}-${log.tunnel_prefix}-${log.path}`;
+    const key =
+      log.id || `${log.timestamp}-${log.tunnel_prefix}-${log.path}-${log.status}`;
     if (!byId.has(key)) {
       byId.set(key, log);
     }
@@ -75,7 +85,7 @@ function mergeLogs(existing: RequestLog[], incoming: RequestLog[]): RequestLog[]
 export function useNerutonStream(
   options: UseNerutonStreamOptions = {},
 ): UseNerutonStreamResult {
-  const { prefixFilter } = options;
+  const { enabled = true, prefixFilter, onUnauthorized } = options;
 
   const [info, setInfo] = useState<ServerInfo | null>(null);
   const [tunnels, setTunnels] = useState<TunnelInfo[]>([]);
@@ -87,8 +97,11 @@ export function useNerutonStream(
 
   const mountedRef = useRef(true);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  onUnauthorizedRef.current = onUnauthorized;
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     try {
       const [nextInfo, nextTunnels, nextLogs] = await Promise.all([
         fetchServerInfo(),
@@ -107,14 +120,44 @@ export function useNerutonStream(
       setLastUpdatedAt(Date.now());
     } catch (err) {
       if (!mountedRef.current) return;
-      const message = err instanceof Error ? err.message : "无法连接到 Neruton 网关";
+      if (err instanceof ApiError && err.unauthorized) {
+        onUnauthorizedRef.current?.();
+        return;
+      }
+      const message =
+        err instanceof Error ? err.message : "无法连接到 Neruton 网关";
       setError(message);
     } finally {
       if (mountedRef.current) {
         setIsLoading(false);
       }
     }
-  }, [prefixFilter]);
+  }, [enabled, prefixFilter]);
+
+  const clearLogsLocal = useCallback(() => {
+    setLogs([]);
+  }, []);
+
+  const removeTunnelLocal = useCallback((prefix: string) => {
+    setTunnels((prev) => prev.filter((t) => t.prefix !== prefix));
+    setInfo((prev) =>
+      prev
+        ? { ...prev, active_tunnels: Math.max(0, prev.active_tunnels - 1) }
+        : prev,
+    );
+  }, []);
+
+  const patchRequireAuthLocal = useCallback((requireAuth: boolean) => {
+    setInfo((prev) =>
+      prev
+        ? {
+            ...prev,
+            require_tunnel_auth: requireAuth,
+            auth_required: requireAuth,
+          }
+        : prev,
+    );
+  }, []);
 
   const scheduleLightSync = useCallback(() => {
     if (syncTimerRef.current) return;
@@ -128,6 +171,12 @@ export function useNerutonStream(
 
   useEffect(() => {
     mountedRef.current = true;
+    if (!enabled) {
+      return () => {
+        mountedRef.current = false;
+      };
+    }
+
     void refresh();
 
     let eventSource: EventSource | null = null;
@@ -163,17 +212,21 @@ export function useNerutonStream(
               ? rec.event
               : "";
 
-      const inner = rec?.data ?? rec?.payload ?? rec?.tunnel ?? rec?.log ?? payload;
+      const inner =
+        rec?.data ?? rec?.payload ?? rec?.tunnel ?? rec?.log ?? payload;
 
       if (resolvedType === "tunnel_connected") {
-        const candidate = isTunnelInfo(inner) ? inner : isTunnelInfo(rec) ? rec : null;
+        const candidate = isTunnelInfo(inner)
+          ? inner
+          : isTunnelInfo(rec)
+            ? rec
+            : null;
         if (candidate) {
           setTunnels((prev) => {
             const exists = prev.some((t) => t.prefix === candidate.prefix);
-            const next = exists
+            return exists
               ? prev.map((t) => (t.prefix === candidate.prefix ? candidate : t))
               : [candidate, ...prev];
-            return next;
           });
           setLastUpdatedAt(Date.now());
         }
@@ -182,10 +235,10 @@ export function useNerutonStream(
       }
 
       if (resolvedType === "tunnel_disconnected") {
+        const innerRec = extractRecord(inner);
         const prefix =
           (typeof rec?.prefix === "string" && rec.prefix) ||
-          (typeof (extractRecord(inner)?.prefix) === "string" &&
-            (extractRecord(inner)?.prefix as string)) ||
+          (typeof innerRec?.prefix === "string" && innerRec.prefix) ||
           null;
         const id =
           (typeof rec?.id === "string" && rec.id) ||
@@ -194,7 +247,11 @@ export function useNerutonStream(
 
         if (prefix || id) {
           setTunnels((prev) =>
-            prev.filter((t) => (prefix ? t.prefix !== prefix : true) && (id ? t.id !== id : true)),
+            prev.filter(
+              (t) =>
+                (prefix ? t.prefix !== prefix : true) &&
+                (id ? t.id !== id : true),
+            ),
           );
           setLastUpdatedAt(Date.now());
         }
@@ -203,7 +260,11 @@ export function useNerutonStream(
       }
 
       if (resolvedType === "request_logged") {
-        const candidate = isRequestLog(inner) ? inner : isRequestLog(rec) ? rec : null;
+        const candidate = isRequestLog(inner)
+          ? inner
+          : isRequestLog(rec)
+            ? rec
+            : null;
         if (candidate) {
           if (!prefixFilter || candidate.tunnel_prefix === prefixFilter) {
             setLogs((prev) => mergeLogs(prev, [candidate]));
@@ -235,9 +296,13 @@ export function useNerutonStream(
         setLastUpdatedAt(Date.now());
         if (rec) {
           const hbActive =
-            typeof rec.active_tunnels === "number" ? rec.active_tunnels : undefined;
+            typeof rec.active_tunnels === "number"
+              ? rec.active_tunnels
+              : undefined;
           const hbTotal =
-            typeof rec.total_requests === "number" ? rec.total_requests : undefined;
+            typeof rec.total_requests === "number"
+              ? rec.total_requests
+              : undefined;
           if (hbActive !== undefined || hbTotal !== undefined) {
             setInfo((prev) =>
               prev
@@ -253,7 +318,6 @@ export function useNerutonStream(
         return;
       }
 
-      // Unknown shape: perform a gentle refresh
       scheduleLightSync();
     };
 
@@ -282,7 +346,9 @@ export function useNerutonStream(
       }
 
       try {
-        const es = new EventSource("/_neruton/api/events");
+        const es = new EventSource("/_neruton/api/events", {
+          withCredentials: true,
+        });
         eventSource = es;
 
         es.onopen = () => {
@@ -350,7 +416,7 @@ export function useNerutonStream(
       if (connectedSyncTimer) clearInterval(connectedSyncTimer);
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     };
-  }, [prefixFilter, refresh, scheduleLightSync]);
+  }, [enabled, prefixFilter, refresh, scheduleLightSync]);
 
   return {
     info,
@@ -361,5 +427,8 @@ export function useNerutonStream(
     error,
     lastUpdatedAt,
     refresh,
+    clearLogsLocal,
+    removeTunnelLocal,
+    patchRequireAuthLocal,
   };
 }

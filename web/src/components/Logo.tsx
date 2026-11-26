@@ -4,53 +4,25 @@ interface LogoProps {
   className?: string;
 }
 
-export function Logo({ className = "h-8 w-8" }: LogoProps) {
+export function Logo({ className = "h-5 w-5" }: LogoProps) {
   return (
     <svg
-      viewBox="0 0 64 64"
+      viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-hidden="true"
     >
-      <defs>
-        <linearGradient
-          id="neruton-logo-grad"
-          x1="8"
-          y1="8"
-          x2="56"
-          y2="56"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset="0%" stopColor="#06b6d4" />
-          <stop offset="100%" stopColor="#10b981" />
-        </linearGradient>
-      </defs>
       <rect
-        width="64"
-        height="64"
-        rx="16"
-        className="fill-zinc-900 dark:fill-zinc-950"
-      />
-      <rect
-        x="2"
-        y="2"
-        width="60"
-        height="60"
-        rx="14"
-        stroke="url(#neruton-logo-grad)"
-        strokeOpacity="0.55"
-        strokeWidth="2.5"
+        width="24"
+        height="24"
+        rx="5"
+        className="fill-foreground"
       />
       <path
-        d="M18 44V20L46 44V20"
-        stroke="url(#neruton-logo-grad)"
-        strokeWidth="5.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        d="M6.75 17.5V6.5H9.4L14.6 13.9V6.5H17.25V17.5H14.6L9.4 10.1V17.5H6.75Z"
+        className="fill-background"
       />
-      <circle cx="18" cy="20" r="4" fill="#22d3ee" />
-      <circle cx="46" cy="44" r="4" fill="#34d399" />
     </svg>
   );
 }

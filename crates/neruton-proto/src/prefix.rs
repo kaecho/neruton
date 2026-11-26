@@ -24,32 +24,12 @@ pub fn generate_uuid_prefix() -> String {
     Uuid::new_v4().to_string()
 }
 
-/// Normalize (trim & lowercase) and validate a subdomain prefix.
-pub fn validate_prefix(raw: &str) -> Result<String, PrefixError> {
-    validate_prefix_with_extra_reserved(raw, None)
-}
-
-/// Normalize and validate a subdomain prefix, also rejecting an optional extra reserved label
-/// (for instance, the panel host subdomain if customized).
-pub fn validate_prefix_with_extra_reserved(
-    raw: &str,
-    extra_reserved: Option<&str>,
-) -> Result<String, PrefixError> {
+/// Normalize (trim & lowercase) and validate DNS label syntax without checking reserved lists.
+pub fn validate_prefix_format(raw: &str) -> Result<String, PrefixError> {
     let normalized = raw.trim().to_ascii_lowercase();
     if normalized.is_empty() {
         return Err(PrefixError::Empty);
     }
-
-    // Check reserved names before character validation so e.g. "_neruton" reports Reserved.
-    if RESERVED_PREFIXES.contains(&normalized.as_str()) {
-        return Err(PrefixError::Reserved(normalized));
-    }
-    if let Some(extra) = extra_reserved {
-        if normalized == extra.trim().to_ascii_lowercase() {
-            return Err(PrefixError::Reserved(normalized));
-        }
-    }
-
     if normalized.len() > 63 {
         return Err(PrefixError::TooLong(normalized.len()));
     }
@@ -66,6 +46,74 @@ pub fn validate_prefix_with_extra_reserved(
     }
 
     Ok(normalized)
+}
+
+/// Normalize (trim & lowercase) and validate a subdomain prefix.
+pub fn validate_prefix(raw: &str) -> Result<String, PrefixError> {
+    validate_prefix_with_extra_reserved(raw, None)
+}
+
+/// Normalize and validate a subdomain prefix, also rejecting an optional extra reserved label
+/// (for instance, the panel host subdomain if customized).
+pub fn validate_prefix_with_extra_reserved(
+    raw: &str,
+    extra_reserved: Option<&str>,
+) -> Result<String, PrefixError> {
+    let extra: Vec<String> = extra_reserved.into_iter().map(str::to_string).collect();
+    validate_prefix_with_reserved_list(raw, &extra)
+}
+
+/// Normalize and validate a subdomain prefix against built-in and dynamic reserved prefix lists.
+pub fn validate_prefix_with_reserved_list(
+    raw: &str,
+    extra_reserved: &[String],
+) -> Result<String, PrefixError> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return Err(PrefixError::Empty);
+    }
+
+    // Check reserved names before character validation so e.g. "_neruton" reports Reserved.
+    if RESERVED_PREFIXES.contains(&normalized.as_str()) {
+        return Err(PrefixError::Reserved(normalized));
+    }
+    if extra_reserved
+        .iter()
+        .any(|extra| normalized == extra.trim().to_ascii_lowercase())
+    {
+        return Err(PrefixError::Reserved(normalized));
+    }
+
+    validate_prefix_format(&normalized)
+}
+
+/// Validate a web account username (3..=32 chars, `[a-zA-Z0-9._-]`).
+pub fn validate_username(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.len() < 3 || trimmed.len() > 32 {
+        return Err("username must be 3 to 32 characters".to_string());
+    }
+    if !trimmed
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+    {
+        return Err(
+            "username may only contain letters, digits, dots, underscores, and hyphens".to_string(),
+        );
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Validate a web account password (8..=128 characters).
+pub fn validate_password(raw: &str) -> Result<(), String> {
+    let count = raw.chars().count();
+    if count < 8 {
+        return Err("password must be at least 8 characters".to_string());
+    }
+    if count > 128 {
+        return Err("password must be at most 128 characters".to_string());
+    }
+    Ok(())
 }
 
 /// Convert a user-supplied `--server` value (`https://...`, `http://...`, `wss://...`, `ws://...`,
@@ -181,6 +229,27 @@ mod tests {
             validate_prefix_with_extra_reserved("panel", Some("panel")),
             Err(PrefixError::Reserved("panel".to_string()))
         );
+        assert_eq!(
+            validate_prefix_with_reserved_list("staging", &["staging".to_string()]),
+            Err(PrefixError::Reserved("staging".to_string()))
+        );
+    }
+
+    #[test]
+    fn username_and_password_validation() {
+        assert_eq!(validate_username("admin").unwrap(), "admin");
+        assert_eq!(
+            validate_username("alice_01.dev-x").unwrap(),
+            "alice_01.dev-x"
+        );
+        assert!(validate_username("ab").is_err());
+        assert!(validate_username(&"a".repeat(33)).is_err());
+        assert!(validate_username("bad user").is_err());
+        assert!(validate_username("bad@user").is_err());
+
+        assert!(validate_password("12345678").is_ok());
+        assert!(validate_password("short").is_err());
+        assert!(validate_password(&"x".repeat(129)).is_err());
     }
 
     #[test]

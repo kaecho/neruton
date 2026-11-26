@@ -15,7 +15,10 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin neruton
+    && groupadd --system --gid 10001 neruton \
+    && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin neruton \
+    && mkdir -p /data \
+    && chown -R neruton:neruton /data
 
 COPY --from=builder /build/target/release/neruton-server /usr/local/bin/neruton-server
 
@@ -25,6 +28,7 @@ ENV NERUTON_BIND=0.0.0.0:8080 \
     NERUTON_BASE_DOMAIN=moer.eu.org \
     NERUTON_PANEL_HOST=neruton.moer.eu.org \
     NERUTON_PUBLIC_SCHEME=https \
+    NERUTON_DATA_DIR=/data \
     RUST_LOG=neruton_server=info
 
 EXPOSE 8080

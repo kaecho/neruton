@@ -1,10 +1,24 @@
 import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import { AuthProvider } from "@/components/AuthContext";
 import "./globals.css";
 
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "Neruton — 内网穿透网关控制台",
+  title: "Neruton — 内网穿透网关",
   description:
-    "轻量化自托管内网穿透网关管理面板：支持泛域名路由、自动 UUID / 自定义子域名前缀、Web 内嵌预览与实时 HTTP/WS 流量监控。",
+    "自托管内网穿透网关控制台：多用户权限、隧道令牌鉴权、泛域名路由、内嵌预览与实时流量观测。",
   icons: {
     icon: "/favicon.svg",
   },
@@ -31,12 +45,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className="dark" suppressHydrationWarning>
+    <html
+      lang="zh-CN"
+      className={`${geistSans.variable} ${geistMono.variable} dark`}
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body className="min-h-screen bg-zinc-50 text-zinc-900 antialiased selection:bg-cyan-500/25 selection:text-cyan-900 dark:bg-[#09090b] dark:text-zinc-100 dark:selection:bg-cyan-500/30 dark:selection:text-cyan-100">
-        {children}
+      <body className="min-h-screen bg-background text-foreground antialiased selection:bg-foreground selection:text-background">
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

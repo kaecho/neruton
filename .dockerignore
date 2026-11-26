@@ -18,6 +18,9 @@ web/.env
 web/.env.*
 !.env.example
 
+# Local runtime state (default NERUTON_DATA_DIR=./data)
+/data
+
 # Misc build & temporary files
 dist
 artifacts

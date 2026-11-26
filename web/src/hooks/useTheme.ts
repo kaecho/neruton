@@ -16,8 +16,7 @@ export function useTheme() {
     setMounted(true);
   }, []);
 
-  const setTheme = useCallback((next: Theme) => {
-    setThemeState(next);
+  const applyTheme = useCallback((next: Theme) => {
     const root = document.documentElement;
     if (next === "dark") {
       root.classList.add("dark");
@@ -27,13 +26,25 @@ export function useTheme() {
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {
-      // ignore storage errors
+      // Ignore storage failures in restricted contexts
     }
   }, []);
 
+  const setTheme = useCallback(
+    (next: Theme) => {
+      setThemeState(next);
+      applyTheme(next);
+    },
+    [applyTheme],
+  );
+
   const toggleTheme = useCallback(() => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  }, [theme, setTheme]);
+    setThemeState((prev) => {
+      const next: Theme = prev === "dark" ? "light" : "dark";
+      applyTheme(next);
+      return next;
+    });
+  }, [applyTheme]);
 
   return { theme, setTheme, toggleTheme, mounted };
 }

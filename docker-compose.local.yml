@@ -1,9 +1,13 @@
 # Local development / source-build verification override (no cloudflared required).
 # Builds both images from local source, exposes neruton-server strictly on loopback
-# 127.0.0.1:8080, and preserves NERUTON_* domain/scheme defaults from docker-compose.yml.
+# 127.0.0.1:8080, persists `/data` in the named `neruton-data` Docker volume, and
+# mirrors production auth and domain defaults from docker-compose.yml.
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#
+# Tip: To test non-browser HTTP clients (e.g. curl) with session cookies over plain
+# http://127.0.0.1:8080, start with NERUTON_PUBLIC_SCHEME=http.
 
 services:
   neruton-web:
@@ -15,9 +19,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.server
+    environment:
+      NERUTON_DATA_DIR: /data
+      NERUTON_REQUIRE_AUTH: ${NERUTON_REQUIRE_AUTH:-true}
+      NERUTON_ADMIN_USER: ${NERUTON_ADMIN_USER:-admin}
+      NERUTON_ADMIN_PASSWORD: ${NERUTON_ADMIN_PASSWORD:-}
+      NERUTON_SESSION_SECRET: ${NERUTON_SESSION_SECRET:-}
+      NERUTON_AUTH_TOKEN: ${NERUTON_AUTH_TOKEN:-}
+    volumes:
+      - neruton-data:/data
     ports:
       - "127.0.0.1:8080:8080"
 
   cloudflared:
     profiles:
       - cloudflare
+
+volumes:
+  neruton-data:

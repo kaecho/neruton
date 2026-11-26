@@ -13,7 +13,7 @@ use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use neruton_proto::ws_stream::{WsByteStream, WsFrame, WsFrameKind, WsPingTracker};
 use neruton_proto::{
-    generate_uuid_prefix, validate_prefix_with_extra_reserved, ErrorResponse, RegisterRequest,
+    generate_uuid_prefix, validate_prefix_with_reserved_list, ErrorResponse, RegisterRequest,
     RegisterResponse, ServerEvent, YamuxClient,
 };
 use serde::Deserialize;
@@ -21,11 +21,58 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::auth::{constant_time_eq, extract_tunnel_token};
 use crate::state::{ActiveTunnel, AppState};
+use crate::store::{TunnelTokenError, TunnelTokenMatch};
 
 #[derive(Debug, Deserialize)]
 pub struct TunnelQuery {
     pub token: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum TunnelAuth {
+    UserToken(TunnelTokenMatch),
+    MasterEnvToken,
+    Anonymous,
+}
+
+impl TunnelAuth {
+    fn owner_id(&self) -> Option<String> {
+        match self {
+            Self::UserToken(m) => Some(m.owner_id.clone()),
+            Self::MasterEnvToken | Self::Anonymous => None,
+        }
+    }
+
+    fn owner_username(&self) -> Option<String> {
+        match self {
+            Self::UserToken(m) => Some(m.owner_username.clone()),
+            Self::MasterEnvToken | Self::Anonymous => None,
+        }
+    }
+
+    fn token_id(&self) -> Option<String> {
+        match self {
+            Self::UserToken(m) => Some(m.token_id.clone()),
+            Self::MasterEnvToken | Self::Anonymous => None,
+        }
+    }
+
+    fn token_name(&self) -> Option<String> {
+        match self {
+            Self::UserToken(m) => Some(m.token_name.clone()),
+            Self::MasterEnvToken => Some("NERUTON_AUTH_TOKEN".to_string()),
+            Self::Anonymous => None,
+        }
+    }
+
+    fn allowed_prefixes(&self) -> &[String] {
+        match self {
+            Self::UserToken(m) => &m.allowed_prefixes,
+            Self::MasterEnvToken | Self::Anonymous => &[],
+        }
+    }
 }
 
 /// Bridge `axum::extract::ws::Message` onto `neruton_proto::WsFrame` so `WsByteStream`
@@ -111,6 +158,25 @@ impl Drop for PrefixGuard {
     }
 }
 
+struct UserSlotGuard {
+    state: Arc<AppState>,
+    owner_id: String,
+}
+
+impl Drop for UserSlotGuard {
+    fn drop(&mut self) {
+        self.state.release_user_slot(&self.owner_id);
+    }
+}
+
+fn unauthorized_json(msg: impl Into<String>) -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(ErrorResponse { error: msg.into() }),
+    )
+        .into_response()
+}
+
 pub async fn ws_tunnel_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
@@ -118,18 +184,43 @@ pub async fn ws_tunnel_handler(
     Query(query): Query<TunnelQuery>,
     connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
 ) -> Response {
-    if !state.is_authorized(&headers, query.token.as_deref()) {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "unauthorized: invalid or missing auth token".to_string(),
-            }),
-        )
-            .into_response();
-    }
+    let raw_token = extract_tunnel_token(&headers, query.token.as_deref());
+
+    let auth = if let Some(tok) = raw_token {
+        match state.store.authenticate_tunnel_token(&tok) {
+            Ok(Some(matched)) => TunnelAuth::UserToken(matched),
+            Err(TunnelTokenError::TokenDisabled) => {
+                return unauthorized_json("Tunnel token is disabled.");
+            }
+            Err(TunnelTokenError::OwnerDisabled) => {
+                return unauthorized_json("Account owning this tunnel token is disabled.");
+            }
+            Ok(None) => {
+                if let Some(master) = state.config.auth_token() {
+                    if constant_time_eq(tok.as_bytes(), master.as_bytes()) {
+                        TunnelAuth::MasterEnvToken
+                    } else {
+                        return unauthorized_json(
+                            "Invalid or revoked tunnel token. Create a valid token in the Neruton web panel and run: neruton config set --token <TOKEN>",
+                        );
+                    }
+                } else {
+                    return unauthorized_json(
+                        "Invalid or revoked tunnel token. Create a valid token in the Neruton web panel and run: neruton config set --token <TOKEN>",
+                    );
+                }
+            }
+        }
+    } else if state.store.require_tunnel_auth() {
+        return unauthorized_json(
+            "Authentication token required. Create a token in the Neruton web panel and run: neruton config set --token <TOKEN>",
+        );
+    } else {
+        TunnelAuth::Anonymous
+    };
 
     let remote_addr = extract_remote_ip(&headers, connect_info.map(|Extension(c)| c.0));
-    ws.on_upgrade(move |socket| handle_tunnel_socket(socket, state, remote_addr))
+    ws.on_upgrade(move |socket| handle_tunnel_socket(socket, state, remote_addr, auth))
 }
 
 fn extract_remote_ip(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
@@ -162,7 +253,12 @@ async fn send_register_error(socket: &mut WebSocket, msg: impl Into<String>) {
     let _ = socket.send(Message::Close(None)).await;
 }
 
-async fn handle_tunnel_socket(mut socket: WebSocket, state: Arc<AppState>, remote_addr: String) {
+async fn handle_tunnel_socket(
+    mut socket: WebSocket,
+    state: Arc<AppState>,
+    remote_addr: String,
+    auth: TunnelAuth,
+) {
     // 1. Wait for RegisterRequest text frame (with 10s handshake timeout).
     let reg_req = match tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(frame) = socket.recv().await {
@@ -196,8 +292,10 @@ async fn handle_tunnel_socket(mut socket: WebSocket, state: Arc<AppState>, remot
         }
     };
 
-    // 2. Validate or auto-generate prefix.
-    let extra_reserved = state.config.panel_subdomain_label();
+    // 2. Enforce token `allowed_prefixes`, dynamic reserved prefixes, and syntax validation.
+    let settings = state.store.settings();
+    let extra_reserved = state.extra_reserved_prefixes();
+    let allowed = auth.allowed_prefixes();
     let requested_prefix = reg_req
         .prefix
         .as_deref()
@@ -205,17 +303,64 @@ async fn handle_tunnel_socket(mut socket: WebSocket, state: Arc<AppState>, remot
         .filter(|s| !s.is_empty());
 
     let prefix = match requested_prefix {
-        Some(raw) => match validate_prefix_with_extra_reserved(raw, extra_reserved.as_deref()) {
-            Ok(valid) => valid,
+        Some(raw) => match validate_prefix_with_reserved_list(raw, &extra_reserved) {
+            Ok(valid) => {
+                if !allowed.is_empty() && !allowed.iter().any(|p| p == &valid) {
+                    send_register_error(
+                        &mut socket,
+                        format!(
+                            "prefix '{valid}' is not permitted by this token (allowed: {})",
+                            allowed.join(", ")
+                        ),
+                    )
+                    .await;
+                    return;
+                }
+                valid
+            }
             Err(err) => {
                 send_register_error(&mut socket, err.to_string()).await;
                 return;
             }
         },
-        None => generate_uuid_prefix(),
+        None => {
+            if !allowed.is_empty() {
+                send_register_error(
+                    &mut socket,
+                    format!(
+                        "this token is restricted to specific prefixes ({}); pass --subdomain <prefix>",
+                        allowed.join(", ")
+                    ),
+                )
+                .await;
+                return;
+            }
+            generate_uuid_prefix()
+        }
     };
 
-    // 3. Atomically reserve prefix (reject active duplicates).
+    // 3. Enforce per-user active tunnel quota atomically (if configured > 0).
+    let _user_slot_guard = if let Some(owner_id) = auth.owner_id() {
+        if !state.try_acquire_user_slot(&owner_id, settings.max_tunnels_per_user) {
+            send_register_error(
+                &mut socket,
+                format!(
+                    "tunnel limit reached ({} max active tunnels per user)",
+                    settings.max_tunnels_per_user
+                ),
+            )
+            .await;
+            return;
+        }
+        Some(UserSlotGuard {
+            state: state.clone(),
+            owner_id,
+        })
+    } else {
+        None
+    };
+
+    // 4. Atomically reserve prefix (reject active duplicates).
     if !state.reserved_prefixes.insert(prefix.clone()) {
         send_register_error(
             &mut socket,
@@ -244,6 +389,8 @@ async fn handle_tunnel_socket(mut socket: WebSocket, state: Arc<AppState>, remot
         preview_url: preview_url.clone(),
         dashboard_url,
         error: None,
+        owner_username: auth.owner_username(),
+        token_name: auth.token_name(),
     };
 
     let resp_json = match serde_json::to_string(&reg_resp) {
@@ -263,7 +410,7 @@ async fn handle_tunnel_socket(mut socket: WebSocket, state: Arc<AppState>, remot
         return;
     }
 
-    // 4. Switch WebSocket to Yamux binary multiplexing with periodic WebSocket keepalive pings.
+    // 5. Switch WebSocket to Yamux binary multiplexing with periodic WebSocket keepalive pings.
     let (ping_tx, ping_rx) = mpsc::channel::<Bytes>(8);
     let latency_ms = Arc::new(AtomicU64::new(0));
     let epoch = Instant::now();
@@ -278,6 +425,7 @@ async fn handle_tunnel_socket(mut socket: WebSocket, state: Arc<AppState>, remot
     );
     let (yamux_client, yamux_driver) = YamuxClient::spawn(ws_stream);
 
+    let owner_id = auth.owner_id();
     let tunnel = Arc::new(ActiveTunnel::new(
         tunnel_id.clone(),
         prefix.clone(),
@@ -289,20 +437,29 @@ async fn handle_tunnel_socket(mut socket: WebSocket, state: Arc<AppState>, remot
         reg_req.client_os,
         remote_addr.clone(),
         Utc::now().to_rfc3339(),
+        owner_id.clone(),
+        auth.owner_username(),
+        auth.token_id(),
+        auth.token_name(),
         latency_ms,
         yamux_client,
     ));
 
     state.tunnels.insert(prefix.clone(), tunnel.clone());
-    state.emit_event(ServerEvent::TunnelConnected {
-        tunnel: tunnel.to_info(),
-    });
+    state.emit_event(
+        owner_id,
+        ServerEvent::TunnelConnected {
+            tunnel: tunnel.to_info(),
+        },
+    );
 
     info!(
         %prefix,
         %tunnel_id,
         %remote_addr,
         %public_url,
+        owner = ?tunnel.owner_username,
+        token = ?tunnel.token_name,
         "tunnel connected"
     );
 

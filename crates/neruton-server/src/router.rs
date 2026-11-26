@@ -3,17 +3,21 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Path, Request, State};
-use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, HOST};
+use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, COOKIE, HOST};
 use axum::http::Method;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, delete, get};
+use axum::routing::{any, get, patch, post};
 use axum::{Json, Router};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::api::{
-    delete_tunnel_handler, events_sse_handler, get_tunnel_handler, global_logs_handler,
-    health_handler, info_handler, list_tunnels_handler, tunnel_logs_handler,
+    auth_login_handler, auth_logout_handler, auth_me_handler, auth_password_handler,
+    auth_setup_handler, auth_status_handler, clear_logs_handler, create_token_handler,
+    create_user_handler, delete_token_handler, delete_tunnel_handler, delete_user_handler,
+    events_sse_handler, get_settings_handler, get_tunnel_handler, global_logs_handler,
+    health_handler, info_handler, list_tokens_handler, list_tunnels_handler, list_users_handler,
+    tunnel_logs_handler, update_settings_handler, update_token_handler, update_user_handler,
 };
 use crate::proxy::{proxy_to_tunnel, proxy_to_web_upstream, tunnel_offline_response};
 use crate::state::AppState;
@@ -21,24 +25,57 @@ use crate::tunnel_ws::ws_tunnel_handler;
 
 pub fn build_app(state: Arc<AppState>) -> Router {
     let api_cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(AllowOrigin::mirror_request())
+        .allow_credentials(true)
         .allow_methods([
             Method::GET,
             Method::POST,
             Method::PUT,
+            Method::PATCH,
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([AUTHORIZATION, CONTENT_TYPE]);
+        .allow_headers([AUTHORIZATION, CONTENT_TYPE, ACCEPT, COOKIE]);
 
     let api_router = Router::new()
+        // Public auth endpoints
+        .route("/auth/status", get(auth_status_handler))
+        .route("/auth/setup", post(auth_setup_handler))
+        .route("/auth/login", post(auth_login_handler))
+        .route("/auth/logout", post(auth_logout_handler))
+        // Authenticated account endpoints
+        .route("/auth/me", get(auth_me_handler))
+        .route("/auth/password", post(auth_password_handler))
+        // Overview, tunnels, logs, SSE
         .route("/info", get(info_handler))
         .route("/tunnels", get(list_tunnels_handler))
-        .route("/tunnels/{prefix}", get(get_tunnel_handler))
-        .route("/tunnels/{prefix}", delete(delete_tunnel_handler))
+        .route(
+            "/tunnels/{prefix}",
+            get(get_tunnel_handler).delete(delete_tunnel_handler),
+        )
         .route("/tunnels/{prefix}/logs", get(tunnel_logs_handler))
-        .route("/logs", get(global_logs_handler))
+        .route("/logs", get(global_logs_handler).delete(clear_logs_handler))
         .route("/events", get(events_sse_handler))
+        // Tunnel tokens
+        .route(
+            "/tokens",
+            get(list_tokens_handler).post(create_token_handler),
+        )
+        .route(
+            "/tokens/{id}",
+            patch(update_token_handler).delete(delete_token_handler),
+        )
+        // Users (Admin only)
+        .route("/users", get(list_users_handler).post(create_user_handler))
+        .route(
+            "/users/{id}",
+            patch(update_user_handler).delete(delete_user_handler),
+        )
+        // Settings
+        .route(
+            "/settings",
+            get(get_settings_handler).patch(update_settings_handler),
+        )
         .layer(api_cors);
 
     let panel_router = Router::new()
@@ -207,5 +244,5 @@ async fn panel_fallback_handler(
         .await;
     }
 
-    Json(state.server_info()).into_response()
+    Json(state.health()).into_response()
 }

@@ -18,8 +18,8 @@ async fn main() -> anyhow::Result<()> {
 
     let config = ServerConfig::parse();
     let bind_addr = config.bind.clone();
-    let state = AppState::new(config.clone());
-    let app = build_app(state);
+    let state = AppState::new(config.clone())?;
+    let app = build_app(state.clone());
 
     let listener = TcpListener::bind(&bind_addr).await?;
     let local_addr = listener.local_addr()?;
@@ -29,8 +29,11 @@ async fn main() -> anyhow::Result<()> {
         base_domain = %config.base_domain(),
         panel_host = %config.panel_host(),
         public_scheme = %config.public_scheme(),
+        data_dir = %config.data_dir.display(),
         web_upstream = ?config.web_upstream(),
-        auth_required = config.auth_token().is_some(),
+        require_tunnel_auth = state.store.require_tunnel_auth(),
+        needs_setup = state.store.needs_setup(),
+        env_token_configured = config.auth_token().is_some(),
         "neruton-server listening"
     );
 

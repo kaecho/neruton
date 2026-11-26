@@ -39,4 +39,4 @@ yamux.workspace = true
 [dev-dependencies]
 axum.workspace = true
 neruton-server = { path = "../neruton-server" }
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies"] }

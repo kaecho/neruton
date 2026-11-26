@@ -24,6 +24,9 @@ web/.env.*
 !.env.example
 !web/.env.example
 
+# Runtime state (default NERUTON_DATA_DIR=./data)
+/data/
+
 # Build & release artifacts
 /dist/
 /artifacts/

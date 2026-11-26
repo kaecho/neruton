@@ -5,6 +5,7 @@ mod tunnel;
 mod ui;
 
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
@@ -135,7 +136,17 @@ fn resolve_server_and_token(common: &CommonTunnelFlags) -> Result<(String, Optio
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExitCode {
+    match run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            ui::log_error(&format!("{err:#}"));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> Result<()> {
     tls::install_crypto_provider();
 
     tracing_subscriber::fmt()

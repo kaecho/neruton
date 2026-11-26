@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use neruton_proto::{
-    build_tunnel_ws_url, normalize_target_url, validate_prefix, RegisterRequest, RegisterResponse,
-    WsByteStream, YamuxServer, VERSION,
+    build_tunnel_ws_url, normalize_target_url, validate_prefix, ErrorResponse, RegisterRequest,
+    RegisterResponse, WsByteStream, YamuxServer, VERSION,
 };
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
@@ -80,7 +80,6 @@ pub async fn run_tunnel_loop(opts: TunnelOptions) -> Result<()> {
                 return Ok(());
             }
             SessionExit::Fatal(reason) => {
-                ui::log_error(&reason);
                 bail!(reason);
             }
             SessionExit::Disconnected(reason) => {
@@ -105,6 +104,40 @@ pub async fn run_tunnel_loop(opts: TunnelOptions) -> Result<()> {
     }
 }
 
+fn format_401_error(body: Option<&[u8]>, had_token: bool) -> String {
+    let server_msg = body
+        .and_then(|bytes| serde_json::from_slice::<ErrorResponse>(bytes).ok())
+        .map(|err| err.error)
+        .filter(|s| !s.trim().is_empty());
+
+    let detail = server_msg.unwrap_or_else(|| {
+        if had_token {
+            "Invalid, disabled, or revoked tunnel token.".to_string()
+        } else {
+            "Authentication token required by this Neruton server.".to_string()
+        }
+    });
+
+    if had_token {
+        format!(
+            "Authentication failed (401 Unauthorized): {detail}\n  Verify or regenerate your token in the Neruton web panel, then run:\n    neruton config set --token <TOKEN>"
+        )
+    } else {
+        format!(
+            "Authentication failed (401 Unauthorized): {detail}\n  Create a token in the Neruton web panel, then run:\n    neruton config set --token <TOKEN>\n  Or pass --token <TOKEN> (or set NERUTON_TOKEN)."
+        )
+    }
+}
+
+fn is_non_retryable_rejection(err_msg: &str) -> bool {
+    let lower = err_msg.to_ascii_lowercase();
+    lower.contains("not permitted")
+        || lower.contains("restricted to specific prefixes")
+        || lower.contains("is reserved")
+        || lower.contains("must match dns label")
+        || lower.contains("tunnel limit reached")
+}
+
 async fn run_single_session(
     ws_url: &str,
     token: Option<&str>,
@@ -118,7 +151,8 @@ async fn run_single_session(
         Err(e) => return SessionExit::Fatal(format!("invalid WebSocket request: {e}")),
     };
 
-    if let Some(tok) = token.map(str::trim).filter(|s| !s.is_empty()) {
+    let normalized_token = token.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(tok) = normalized_token {
         if let Ok(hv) = HeaderValue::from_str(&format!("Bearer {tok}")) {
             ws_req.headers_mut().insert("Authorization", hv);
         }
@@ -132,10 +166,8 @@ async fn run_single_session(
         res = connect_fut => match res {
             Ok(pair) => pair,
             Err(tokio_tungstenite::tungstenite::Error::Http(resp)) if resp.status().as_u16() == 401 => {
-                return SessionExit::Fatal(
-                    "Authentication failed (401 Unauthorized). Provide a valid --token or NERUTON_TOKEN."
-                        .to_string(),
-                );
+                let body_bytes = resp.body().as_deref();
+                return SessionExit::Fatal(format_401_error(body_bytes, normalized_token.is_some()));
             }
             Err(e) => {
                 return SessionExit::Disconnected(format!("connect failed: {e}"));
@@ -188,7 +220,7 @@ async fn run_single_session(
         let err_msg = reg_resp
             .error
             .unwrap_or_else(|| "registration rejected by server".to_string());
-        if !*ever_connected {
+        if !*ever_connected || is_non_retryable_rejection(&err_msg) {
             return SessionExit::Fatal(format!("Registration rejected: {err_msg}"));
         }
         return SessionExit::Disconnected(format!("re-registration rejected: {err_msg}"));

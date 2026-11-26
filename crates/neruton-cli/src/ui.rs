@@ -14,6 +14,13 @@ fn c(code: &str, text: &str) -> String {
 }
 
 pub fn print_banner(resp: &RegisterResponse, target_url: &str) {
+    let auth_label = match (resp.owner_username.as_deref(), resp.token_name.as_deref()) {
+        (Some(owner), Some(token)) => format!("{owner} ({token})"),
+        (Some(owner), None) => owner.to_string(),
+        (None, Some(token)) => token.to_string(),
+        (None, None) => "anonymous (open mode)".to_string(),
+    };
+
     let rows = [
         ("Wildcard URL", resp.public_url.as_str(), "1;36"),
         ("Web Preview", resp.preview_url.as_str(), "1;32"),
@@ -21,6 +28,7 @@ pub fn print_banner(resp: &RegisterResponse, target_url: &str) {
         ("Dashboard", resp.dashboard_url.as_str(), "34"),
         ("Forwarding", target_url, "33"),
         ("Prefix", resp.prefix.as_str(), "1;35"),
+        ("Auth", auth_label.as_str(), "37"),
     ];
 
     let label_width = rows.iter().map(|(l, _, _)| l.len()).max().unwrap_or(12);
