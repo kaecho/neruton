@@ -41,7 +41,7 @@ fn cli_version_and_config_commands() {
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("neruton 0.2.0"));
+    assert!(stdout.contains("neruton 0.4.0"));
 
     let tmp_cfg =
         std::env::temp_dir().join(format!("neruton-test-cfg-{}.toml", uuid::Uuid::new_v4()));
@@ -54,24 +54,81 @@ fn cli_version_and_config_commands() {
             "https://custom.example.com",
             "--token",
             "ntk_abc123",
+            "--doh",
+            "strict",
+            "--sni-mode",
+            "ech",
+            "--sni",
+            "cloudflare-ech.com",
+            "--ech-config",
+            "AAEC",
             "--config",
             tmp_cfg.to_str().unwrap(),
         ])
         .output()
         .unwrap();
-    assert!(set_out.status.success());
+    assert!(
+        set_out.status.success(),
+        "config set stderr: {}",
+        String::from_utf8_lossy(&set_out.stderr)
+    );
 
     let show_out = std::process::Command::new(bin)
         .args(["config", "show", "--config", tmp_cfg.to_str().unwrap()])
         .env_remove("NERUTON_SERVER")
+        .env_remove("NERUTON_DOH")
+        .env_remove("NERUTON_SNI_MODE")
+        .env_remove("NERUTON_SNI")
+        .env_remove("NERUTON_ECH_CONFIG")
         .output()
         .unwrap();
     assert!(show_out.status.success());
     let show_str = String::from_utf8_lossy(&show_out.stdout);
     assert!(show_str.contains("https://custom.example.com"));
     assert!(show_str.contains("<configured>"));
+    assert!(show_str.contains("strict"));
+    assert!(show_str.contains("mode=ech"));
+    assert!(show_str.contains("cloudflare-ech.com"));
 
     let _ = std::fs::remove_file(&tmp_cfg);
+}
+
+#[tokio::test]
+async fn real_cli_binary_fails_fast_on_strict_ech_without_config() {
+    let bin = env!("CARGO_BIN_EXE_neruton");
+    let missing_cfg =
+        std::env::temp_dir().join(format!("neruton-missing-ech-{}.toml", uuid::Uuid::new_v4()));
+
+    let out = tokio::time::timeout(
+        Duration::from_secs(5),
+        Command::new(bin)
+            .args([
+                "http",
+                "3000",
+                "--server",
+                "https://127.0.0.1:443",
+                "--no-doh",
+                "--sni-mode",
+                "ech",
+                "--config",
+                missing_cfg.to_str().unwrap(),
+            ])
+            .env("NO_COLOR", "1")
+            .env_remove("NERUTON_ECH_CONFIG")
+            .env_remove("NERUTON_DOH")
+            .env_remove("NERUTON_SNI_MODE")
+            .output(),
+    )
+    .await
+    .expect("CLI should fail fast on strict --sni-mode ech without ECHConfigList")
+    .unwrap();
+
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("ECH mode") && stderr.contains("ECHConfigList"),
+        "unexpected stderr: {stderr}"
+    );
 }
 
 #[tokio::test]

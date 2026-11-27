@@ -1,4 +1,4 @@
-# Production Docker Compose stack for Neruton v0.2.0 (Zero exposed host ports)
+# Production Docker Compose stack for Neruton v0.4.0 (Zero exposed host ports)
 # Pulls prebuilt multi-arch images from GHCR (no server-side compilation needed).
 # Traffic enters exclusively via the outbound `cloudflared` Cloudflare Tunnel
 # and is routed internally over `neruton-net` to `neruton-server:8080`.

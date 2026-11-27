@@ -1,19 +1,27 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use neruton_proto::{
     build_tunnel_ws_url, normalize_target_url, validate_prefix, ErrorResponse, RegisterRequest,
     RegisterResponse, WsByteStream, YamuxServer, VERSION,
 };
+use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
+use tracing::debug;
+use url::Url;
 
+use crate::doh::{resolve_host, strip_ipv6_brackets, DohConfig};
 use crate::forwarder::{handle_yamux_stream, HostHeaderMode, TargetConfig};
-use crate::tls::{build_rustls_config, build_ws_connector};
+use crate::tls::{
+    build_rustls_config, connect_stealth_tls, StealthTlsOptions, TlsConnectError, TunnelStream,
+};
 use crate::ui;
+
+const PLAIN_TCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct TunnelOptions {
     pub server: String,
@@ -22,6 +30,8 @@ pub struct TunnelOptions {
     pub token: Option<String>,
     pub no_tls_verify: bool,
     pub host_header: Option<String>,
+    pub doh: DohConfig,
+    pub tls: StealthTlsOptions,
 }
 
 enum SessionExit {
@@ -31,7 +41,7 @@ enum SessionExit {
 }
 
 pub async fn run_tunnel_loop(opts: TunnelOptions) -> Result<()> {
-    let target_url = normalize_target_url(&opts.target_url).map_err(|e| anyhow::anyhow!(e))?;
+    let target_url = normalize_target_url(&opts.target_url).map_err(|e| anyhow!(e))?;
     let ws_url = build_tunnel_ws_url(&opts.server)
         .with_context(|| format!("invalid server URL '{}'", opts.server))?;
 
@@ -41,7 +51,7 @@ pub async fn run_tunnel_loop(opts: TunnelOptions) -> Result<()> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        Some(raw) => Some(validate_prefix(raw).map_err(|e| anyhow::anyhow!(e))?),
+        Some(raw) => Some(validate_prefix(raw).map_err(|e| anyhow!(e))?),
         None => None,
     };
 
@@ -65,9 +75,10 @@ pub async fn run_tunnel_loop(opts: TunnelOptions) -> Result<()> {
 
         let connected_at = Instant::now();
         let outcome = run_single_session(
-            ws_url.as_str(),
+            &ws_url,
             opts.token.as_deref(),
-            opts.no_tls_verify,
+            &opts.doh,
+            &opts.tls,
             &mut sticky_prefix,
             target_cfg.clone(),
             &mut ever_connected,
@@ -138,15 +149,99 @@ fn is_non_retryable_rejection(err_msg: &str) -> bool {
         || lower.contains("tunnel limit reached")
 }
 
+/// Open TCP + optional stealth TLS stream with DoH resolution and multi-IP failover.
+async fn establish_tunnel_transport(
+    ws_url: &Url,
+    doh: &DohConfig,
+    tls_opts: &StealthTlsOptions,
+) -> std::result::Result<(TunnelStream, String), TlsConnectError> {
+    let is_tls = match ws_url.scheme() {
+        "wss" => true,
+        "ws" => false,
+        other => {
+            return Err(TlsConnectError::Fatal(format!(
+                "unsupported WebSocket scheme '{other}'"
+            )))
+        }
+    };
+
+    let host_raw = ws_url
+        .host_str()
+        .ok_or_else(|| TlsConnectError::Fatal("server URL is missing a host".to_string()))?;
+    let real_host = strip_ipv6_brackets(host_raw);
+    let port = ws_url
+        .port_or_known_default()
+        .unwrap_or(if is_tls { 443 } else { 80 });
+
+    let resolved = resolve_host(doh, real_host, port)
+        .await
+        .map_err(|e| TlsConnectError::Retryable(format!("DNS resolution failed: {e}")))?;
+
+    let mut last_err: Option<String> = None;
+
+    for addr in &resolved.addrs {
+        if !is_tls {
+            match tokio::time::timeout(PLAIN_TCP_CONNECT_TIMEOUT, TcpStream::connect(*addr)).await {
+                Ok(Ok(tcp)) => {
+                    let _ = tcp.set_nodelay(true);
+                    let label = format!("{} + ws (plaintext)", resolved.source.short_label());
+                    return Ok((TunnelStream::Plain(tcp), format!("{addr} [{label}]")));
+                }
+                Ok(Err(e)) => {
+                    last_err = Some(format!("TCP connect to {addr} failed: {e}"));
+                }
+                Err(_) => {
+                    last_err = Some(format!("TCP connect to {addr} timed out"));
+                }
+            }
+            continue;
+        }
+
+        match connect_stealth_tls(
+            *addr,
+            real_host,
+            tls_opts,
+            resolved.ech_config_list.as_deref(),
+        )
+        .await
+        {
+            Ok(connected) => {
+                debug!(
+                    addr = %addr,
+                    host = real_host,
+                    ech_status = ?connected.ech_status,
+                    mode = %connected.mode_label,
+                    "stealth TLS handshake succeeded"
+                );
+                let label = format!(
+                    "{} + {}",
+                    resolved.source.short_label(),
+                    connected.mode_label
+                );
+                return Ok((connected.stream, format!("{addr} [{label}]")));
+            }
+            Err(TlsConnectError::Fatal(msg)) => return Err(TlsConnectError::Fatal(msg)),
+            Err(TlsConnectError::Retryable(msg)) => {
+                last_err = Some(msg);
+            }
+        }
+    }
+
+    Err(TlsConnectError::Retryable(last_err.unwrap_or_else(|| {
+        format!("failed to connect to any resolved address for '{real_host}:{port}'")
+    })))
+}
+
 async fn run_single_session(
-    ws_url: &str,
+    ws_url: &Url,
     token: Option<&str>,
-    no_tls_verify: bool,
+    doh: &DohConfig,
+    tls_opts: &StealthTlsOptions,
     sticky_prefix: &mut Option<String>,
     target_cfg: Arc<TargetConfig>,
     ever_connected: &mut bool,
 ) -> SessionExit {
-    let mut ws_req = match ws_url.into_client_request() {
+    let mut ws_req = match ws_url.as_str().into_client_request() {
         Ok(r) => r,
         Err(e) => return SessionExit::Fatal(format!("invalid WebSocket request: {e}")),
     };
@@ -158,19 +253,30 @@ async fn run_single_session(
         }
     }
 
-    let connector = build_ws_connector(no_tls_verify);
-    let connect_fut =
-        tokio_tungstenite::connect_async_tls_with_config(ws_req, None, false, Some(connector));
+    let (transport, transport_desc) = tokio::select! {
+        res = establish_tunnel_transport(ws_url, doh, tls_opts) => match res {
+            Ok(pair) => pair,
+            Err(TlsConnectError::Fatal(reason)) => return SessionExit::Fatal(reason),
+            Err(TlsConnectError::Retryable(reason)) => {
+                return SessionExit::Disconnected(format!("connect failed: {reason}"));
+            }
+        },
+        _ = tokio::signal::ctrl_c() => return SessionExit::Shutdown,
+    };
+
+    ui::log_info(&format!("Transport established: {transport_desc}"));
+
+    let ws_fut = tokio_tungstenite::client_async_with_config(ws_req, transport, None);
 
     let (mut ws_stream, _http_resp) = tokio::select! {
-        res = connect_fut => match res {
+        res = ws_fut => match res {
             Ok(pair) => pair,
             Err(tokio_tungstenite::tungstenite::Error::Http(resp)) if resp.status().as_u16() == 401 => {
                 let body_bytes = resp.body().as_deref();
                 return SessionExit::Fatal(format_401_error(body_bytes, normalized_token.is_some()));
             }
             Err(e) => {
-                return SessionExit::Disconnected(format!("connect failed: {e}"));
+                return SessionExit::Disconnected(format!("WebSocket upgrade failed: {e}"));
             }
         },
         _ = tokio::signal::ctrl_c() => return SessionExit::Shutdown,

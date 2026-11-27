@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=77.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neruton"
+version = "0.4.0"
+description = "Native pure-Python tunnel client & SDK for Neruton (WSS + Yamux HTTP/WebSocket intranet proxy)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "neruton contributors" }]
+keywords = [
+    "neruton",
+    "tunnel",
+    "proxy",
+    "yamux",
+    "websocket",
+    "intranet",
+    "reverse-proxy",
+    "cloudflared",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: Proxy Servers",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "cryptography>=42.0.0",
+    "websockets>=13.0",
+    "tomli>=2.0.1; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kaecho/neruton"
+Repository = "https://github.com/kaecho/neruton"
+Issues = "https://github.com/kaecho/neruton/issues"
+
+[project.scripts]
+neruton = "neruton.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+neruton = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

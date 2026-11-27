@@ -4,10 +4,20 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CliConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doh: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sni_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sni: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ech_config: Option<String>,
 }
 
 pub fn default_config_path() -> PathBuf {
@@ -57,4 +67,43 @@ pub fn save_config(explicit: Option<&Path>, cfg: &CliConfig) -> Result<PathBuf> 
     }
 
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_roundtrip_with_stealth_fields_and_legacy_compat() {
+        // Legacy config without stealth fields still parses cleanly.
+        let legacy: CliConfig = toml::from_str(
+            r#"
+server = "https://neruton.moer.eu.org"
+token = "ntk_secret"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            legacy.server.as_deref(),
+            Some("https://neruton.moer.eu.org")
+        );
+        assert_eq!(legacy.doh, None);
+        assert_eq!(legacy.sni_mode, None);
+
+        // Full stealth config roundtrips through disk.
+        let path =
+            std::env::temp_dir().join(format!("neruton-cfg-test-{}.toml", uuid::Uuid::new_v4()));
+        let cfg = CliConfig {
+            server: Some("https://neruton.moer.eu.org".into()),
+            token: Some("ntk_123".into()),
+            doh: Some("strict".into()),
+            sni_mode: Some("ech".into()),
+            sni: Some("cloudflare-ech.com".into()),
+            ech_config: Some("AEf+DQ==".into()),
+        };
+        save_config(Some(&path), &cfg).unwrap();
+        let loaded = load_config(Some(&path)).unwrap();
+        assert_eq!(loaded, cfg);
+        let _ = fs::remove_file(&path);
+    }
 }

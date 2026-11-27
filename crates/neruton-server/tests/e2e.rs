@@ -231,7 +231,7 @@ async fn connect_test_tunnel(
     let reg = RegisterRequest {
         prefix: prefix.map(str::to_string),
         target_url: format!("http://{backend_addr}"),
-        client_version: "0.2.0-test".to_string(),
+        client_version: "0.4.0-test".to_string(),
         client_os: "linux/x86_64".to_string(),
     };
     ws.send(TungMsg::Text(serde_json::to_string(&reg).unwrap().into()))

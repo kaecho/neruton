@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+base64.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 clap.workspace = true
@@ -21,6 +22,7 @@ http-body-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 neruton-proto.workspace = true
+ring.workspace = true
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -35,6 +37,7 @@ url.workspace = true
 uuid.workspace = true
 webpki-roots.workspace = true
 yamux.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 axum.workspace = true

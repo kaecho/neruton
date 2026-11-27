@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 authors = ["neruton contributors"]
@@ -35,6 +35,7 @@ http-body-util = "0.1"
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
 rand = "0.8"
+ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -54,5 +55,6 @@ url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 webpki-roots = "0.26"
 yamux = "0.13"
+zeroize = "1"
 
 neruton-proto = { path = "crates/neruton-proto" }
